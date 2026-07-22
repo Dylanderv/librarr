@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Librarr</title>
 <link rel="stylesheet" href="/static/css/fonts.css">
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v=20260722">
 <!-- Tailwind Play CDN + Inter, vendored: UI works offline and CSP stays script-src 'self' -->
 <script src="/static/js/vendor/tailwind.js"></script>
 <script src="/static/js/tailwind-config.js"></script>
@@ -175,18 +175,31 @@
         </div>
       </div>
 
-      <!-- Sort bar -->
-      <div id="search-sort-bar" class="hidden flex items-center justify-between mb-4">
+      <!-- Toolbar: result count + view toggles + sort -->
+      <div id="search-toolbar" class="hidden flex items-center justify-between gap-3 mb-4 flex-wrap">
         <span id="search-result-count" class="text-sm text-slate-400"></span>
-        <div class="flex items-center gap-2">
-          <button data-action="setSortMode" data-arg="relevance" data-sort="relevance" class="sort-btn text-xs px-3 py-1 rounded-md bg-indigo-600 text-white">Relevance</button>
-          <button data-action="setSortMode" data-arg="seeders" data-sort="seeders" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white">Seeders</button>
-          <button data-action="setSortMode" data-arg="size" data-sort="size" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white">Size</button>
+        <div class="flex items-center gap-2 flex-wrap">
+          <!-- Layout: grid / list -->
+          <div class="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5">
+            <button data-action="setViewLayout" data-arg="grid" data-view-layout="grid" class="seg-btn text-xs px-3 py-1 rounded-md text-slate-400 hover:text-white" data-i18n="view_grid">Grid</button>
+            <button data-action="setViewLayout" data-arg="list" data-view-layout="list" class="seg-btn text-xs px-3 py-1 rounded-md text-slate-400 hover:text-white" data-i18n="view_list">List</button>
+          </div>
+          <!-- Grouping: flat / by source -->
+          <div class="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5">
+            <button data-action="setViewGroup" data-arg="flat" data-view-group="flat" class="seg-btn text-xs px-3 py-1 rounded-md text-slate-400 hover:text-white" data-i18n="group_flat">Flat</button>
+            <button data-action="setViewGroup" data-arg="source" data-view-group="source" class="seg-btn text-xs px-3 py-1 rounded-md text-slate-400 hover:text-white" data-i18n="group_source">By source</button>
+          </div>
+          <!-- Sort (grid layout only; list sorts via column headers) -->
+          <div id="search-sort-buttons" class="hidden flex items-center gap-2">
+            <button data-action="setSortMode" data-arg="relevance" data-sort="relevance" class="sort-btn text-xs px-3 py-1 rounded-md bg-indigo-600 text-white" data-i18n="sort_relevance">Relevance</button>
+            <button data-action="setSortMode" data-arg="seeders" data-sort="seeders" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white" data-i18n="sort_seeders">Seeders</button>
+            <button data-action="setSortMode" data-arg="size" data-sort="size" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white" data-i18n="sort_size">Size</button>
+          </div>
         </div>
       </div>
 
-      <!-- Search skeleton -->
-      <div id="search-skeleton" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6"></div>
+      <!-- Search skeleton (per-lane placeholder rows) -->
+      <div id="search-skeleton" class="hidden space-y-3 mb-6"></div>
 
       <!-- Search empty state -->
       <div id="search-empty" class="text-center py-16">
@@ -200,8 +213,8 @@
         <p class="text-slate-400" data-i18n="no_results_hint">Try different keywords or check your spelling</p>
       </div>
 
-      <!-- Search results -->
-      <div id="search-results" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6"></div>
+      <!-- Search results (layout/grouping set by JS: cards grid, table, or swimlanes) -->
+      <div id="search-results" class="mb-6"></div>
 
       <!-- Search spinner / loading more -->
       <div id="search-loading-more" class="hidden text-center py-4 text-slate-500 text-sm" data-i18n="loading">Loading...</div>
@@ -619,6 +632,8 @@
   </main>
 </div>
 
-<script src="/static/js/app.js"></script>
+<!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
+     cached bundle against fresh index.html (assets cache for up to 1h). -->
+<script src="/static/js/app.js?v=20260722"></script>
 </body>
 </html>
