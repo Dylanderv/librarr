@@ -5,6 +5,7 @@
 *.db-shm
 .env
 /data/
+/local-data/
 /tmp/
 /vendor/
 node_modules/
