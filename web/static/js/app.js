@@ -1435,6 +1435,14 @@ function cssEscape(s) {
   return String(s).replace(/["\\]/g, '\\$&');
 }
 
+// baseName returns the last path segment of a file path (works for POSIX
+// mounts), trimming a trailing slash first. Used to show a filename when no
+// title metadata is available.
+function baseName(p) {
+  if (!p) return '';
+  return String(p).replace(/\/+$/, '').split('/').pop();
+}
+
 // ---- Lane helpers ----
 function laneLabel(name) {
   const meta = state.sources.find(s => s.name === name);
@@ -2328,9 +2336,14 @@ function renderLibraryAudiobook(item, index) {
 }
 
 function renderLibraryManga(item, index) {
+  // Kavita rows carry `name`; local-DB fallback rows carry `title` (the torrent
+  // name), or at worst just a file_path — derive a display name from whichever
+  // is present so entries don't all show "Unknown".
+  const displayName = item.name || item.title || baseName(item.file_path) || '';
+
   const coverHtml = item.cover_url
-    ? `<img src="${escapeHtml(item.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" data-ph-title="${escapeHtml(item.name || '')}" data-ph-idx="${index}">`
-    : makePlaceholderHtml(item.name || '?', index);
+    ? `<img src="${escapeHtml(item.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" data-ph-title="${escapeHtml(displayName)}" data-ph-idx="${index}">`
+    : makePlaceholderHtml(displayName || '?', index);
 
   const selected = state.selectedSeries.has(item.id);
   const selectClasses = state.selectMode ? 'cursor-pointer' : '';
@@ -2341,7 +2354,7 @@ function renderLibraryManga(item, index) {
     ? `<div class="absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${selected ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 border border-slate-500 text-transparent'}">&#x2713;</div>`
     : '';
   const cardAttrs = state.selectMode
-    ? `data-action="toggleSeriesSelect" data-id="${escapeHtml(String(item.id))}" data-name="${escapeHtml(item.name || '')}"`
+    ? `data-action="toggleSeriesSelect" data-id="${escapeHtml(String(item.id))}" data-name="${escapeHtml(displayName)}"`
     : '';
 
   return `
@@ -2349,7 +2362,7 @@ function renderLibraryManga(item, index) {
       ${selectOverlay}
       ${coverHtml}
       <div class="p-3">
-        <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(item.name || 'Unknown')}</h3>
+        <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(displayName || 'Unknown')}</h3>
         <div class="flex items-center gap-2 text-xs text-slate-500 mb-2">
           ${item.pages ? `<span>${t('n_pages', {n: item.pages})}</span>` : ''}
           ${item.library ? `<span>${escapeHtml(item.library)}</span>` : ''}
