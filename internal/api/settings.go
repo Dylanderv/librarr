@@ -71,6 +71,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 		"kavita_url":           s.cfg.KavitaURL,
 		"kavita_user":          s.cfg.KavitaUser,
 		"kavita_pass":          s.cfg.KavitaPass,
+		"kavita_path_map":      s.cfg.KavitaPathMap,
 		"komga_url":            s.cfg.KomgaURL,
 		"komga_user":           s.cfg.KomgaUser,
 		"komga_pass":           s.cfg.KomgaPass,

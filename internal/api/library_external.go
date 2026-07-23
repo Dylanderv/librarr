@@ -9,11 +9,18 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/JeremiahM37/librarr/internal/kavita"
 	"github.com/JeremiahM37/librarr/internal/models"
 )
+
+// kavitaClient builds a Kavita client from the current config. A fresh client
+// per request keeps runtime settings changes honored while still caching the
+// JWT across the multiple calls a single request may make.
+func (s *Server) kavitaClient() *kavita.Client {
+	return kavita.New(s.cfg.KavitaURL, s.cfg.KavitaUser, s.cfg.KavitaPass)
+}
 
 // --- Audiobookshelf Library ---
 
@@ -193,16 +200,9 @@ func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
 
 	page := queryInt(r, "page", 1)
 	query := r.URL.Query().Get("q")
+	ctx := r.Context()
 
-	// Step 1: Login to Kavita to get JWT.
-	token, err := s.kavitaLogin()
-	if err != nil {
-		slog.Error("Kavita login failed", "error", err)
-		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"error": "Failed to authenticate with Kavita",
-		})
-		return
-	}
+	client := s.kavitaClient()
 
 	publicURL := s.cfg.KavitaPublicURL
 	if publicURL == "" {
@@ -211,66 +211,30 @@ func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
 
 	if query != "" {
 		// Use search endpoint.
-		s.handleKavitaSearch(w, token, query, page, publicURL)
+		series, err := client.SearchSeries(ctx, query)
+		if err != nil {
+			slog.Error("Kavita search failed", "error", err)
+			writeJSON(w, http.StatusBadGateway, map[string]interface{}{
+				"error": "Failed to search Kavita",
+			})
+			return
+		}
+		items := s.kavitaSeriesToItems(series, publicURL)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"items": items,
+			"total": len(items),
+			"page":  page,
+			"pages": 1,
+		})
 		return
 	}
 
-	// Step 2: Get all series via POST /api/Series/all-v2.
 	limit := 100
-	reqBody := map[string]interface{}{
-		"statements":  []interface{}{},
-		"combination": 1,
-		"limitTo":     0,
-		"sortOptions": map[string]interface{}{
-			"sortField":   1,
-			"isAscending": true,
-		},
-	}
-	bodyBytes, _ := json.Marshal(reqBody)
-
-	apiURL := fmt.Sprintf("%s/api/Series/all-v2?pageNumber=%d&pageSize=%d", s.cfg.KavitaURL, page-1, limit)
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(bodyBytes)))
+	series, total, err := client.AllSeries(ctx, page, limit)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
+		slog.Error("Kavita series list failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
 			"error": "Failed to reach Kavita",
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		slog.Error("Kavita series non-200", "status", resp.StatusCode, "body", string(body))
-		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"error": fmt.Sprintf("Kavita returned HTTP %d", resp.StatusCode),
-		})
-		return
-	}
-
-	// Parse pagination header.
-	total := 0
-	if pagination := resp.Header.Get("Pagination"); pagination != "" {
-		var pag struct {
-			TotalItems int `json:"totalItems"`
-		}
-		if err := json.Unmarshal([]byte(pagination), &pag); err == nil {
-			total = pag.TotalItems
-		}
-	}
-
-	var series []kavitaSeries
-	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to parse Kavita response",
 		})
 		return
 	}
@@ -285,61 +249,7 @@ func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleKavitaSearch(w http.ResponseWriter, token, query string, page int, publicURL string) {
-	apiURL := fmt.Sprintf("%s/api/Search/search?queryString=%s", s.cfg.KavitaURL, url.QueryEscape(query))
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"error": "Failed to reach Kavita",
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"error": fmt.Sprintf("Kavita search returned HTTP %d", resp.StatusCode),
-		})
-		return
-	}
-
-	var searchResult struct {
-		Series []kavitaSeries `json:"series"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to parse Kavita search response",
-		})
-		return
-	}
-
-	items := s.kavitaSeriesToItems(searchResult.Series, publicURL)
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": items,
-		"total": len(items),
-		"page":  page,
-		"pages": 1,
-	})
-}
-
-type kavitaSeries struct {
-	ID          int    `json:"id"`
-	Name        string `json:"name"`
-	Pages       int    `json:"pages"`
-	LibraryName string `json:"libraryName"`
-	LibraryID   int    `json:"libraryId"`
-}
-
-func (s *Server) kavitaSeriesToItems(series []kavitaSeries, publicURL string) []map[string]interface{} {
+func (s *Server) kavitaSeriesToItems(series []kavita.Series, publicURL string) []map[string]interface{} {
 	var items []map[string]interface{}
 	for _, sr := range series {
 		// Use public URL for covers so the browser can reach them
@@ -359,36 +269,6 @@ func (s *Server) kavitaSeriesToItems(series []kavitaSeries, publicURL string) []
 		items = []map[string]interface{}{}
 	}
 	return items
-}
-
-func (s *Server) kavitaLogin() (string, error) {
-	payload, _ := json.Marshal(map[string]string{
-		"username": s.cfg.KavitaUser,
-		"password": s.cfg.KavitaPass,
-	})
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(
-		s.cfg.KavitaURL+"/api/Account/login",
-		"application/json",
-		strings.NewReader(string(payload)),
-	)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("kavita login HTTP %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	return result.Token, nil
 }
 
 // --- Delete library items ---

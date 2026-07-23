@@ -99,6 +99,33 @@ const I18N = {
     n_pages: '{n} pages',
     open_in_abs: 'Open in Audiobookshelf',
     open_in_kavita: 'Open in Kavita',
+    select_items: 'Select',
+    selected: 'selected',
+    edit_metadata: 'Edit metadata',
+    clear: 'Clear',
+    series_selected: 'series selected',
+    metadata_help: 'Only fields you enable are written. Changes are saved into the book files (EPUB/CBZ) and Kavita is rescanned. Fields left disabled are untouched.',
+    list_mode: 'For authors/genres/tags:',
+    mode_replace: 'Replace',
+    mode_append: 'Append',
+    field_authors: 'Authors',
+    field_genres: 'Genres',
+    field_tags: 'Tags',
+    field_publisher: 'Publisher',
+    field_language: 'Language',
+    field_summary: 'Summary',
+    comma_separated: '(comma-separated)',
+    cancel: 'Cancel',
+    save_write_files: 'Save & write files',
+    metadata_no_fields: 'Enable at least one field to write.',
+    writing: 'Writing…',
+    metadata_online_help: 'Fetch metadata from an online database to pre-fill the fields below, then review before saving.',
+    search_online: 'Search online',
+    source_manga: 'Manga (AniList)',
+    source_book: 'Book (Open Library)',
+    searching: 'Searching…',
+    no_matches: 'No matches found.',
+    search_failed: 'Search failed.',
     prev: 'Prev',
     next: 'Next',
     // Downloads
@@ -319,6 +346,33 @@ const I18N = {
     n_pages: '{n} страниц',
     open_in_abs: 'Открыть в Audiobookshelf',
     open_in_kavita: 'Открыть в Kavita',
+    select_items: 'Выбрать',
+    selected: 'выбрано',
+    edit_metadata: 'Изменить метаданные',
+    clear: 'Очистить',
+    series_selected: 'серий выбрано',
+    metadata_help: 'Записываются только включённые поля. Изменения сохраняются в файлы книг (EPUB/CBZ), затем Kavita пересканируется. Отключённые поля не трогаются.',
+    list_mode: 'Для авторов/жанров/тегов:',
+    mode_replace: 'Заменить',
+    mode_append: 'Добавить',
+    field_authors: 'Авторы',
+    field_genres: 'Жанры',
+    field_tags: 'Теги',
+    field_publisher: 'Издатель',
+    field_language: 'Язык',
+    field_summary: 'Описание',
+    comma_separated: '(через запятую)',
+    cancel: 'Отмена',
+    save_write_files: 'Сохранить и записать файлы',
+    metadata_no_fields: 'Включите хотя бы одно поле для записи.',
+    writing: 'Запись…',
+    metadata_online_help: 'Получите метаданные из онлайн-базы, чтобы заполнить поля ниже, затем проверьте перед сохранением.',
+    search_online: 'Искать онлайн',
+    source_manga: 'Манга (AniList)',
+    source_book: 'Книга (Open Library)',
+    searching: 'Поиск…',
+    no_matches: 'Совпадений не найдено.',
+    search_failed: 'Ошибка поиска.',
     prev: 'Назад',
     next: 'Далее',
     // Downloads
@@ -527,6 +581,9 @@ const state = {
   resultsByKey: new Map(),     // stable result key -> result (replaces data-idx)
   libraryPage: 1,
   libraryPages: 1,
+  // Bulk metadata selection (manga/Kavita tab only).
+  selectMode: false,
+  selectedSeries: new Map(), // Kavita series id -> name
   config: null,
   downloadPollTimer: null,
   currentUser: null,
@@ -1020,6 +1077,15 @@ function switchLibraryTab(tab) {
   document.querySelectorAll('.lib-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.ltab === tab);
   });
+  // Bulk metadata editing is backed by Kavita series, which only the manga
+  // tab lists. Leaving the tab exits select mode so state can't leak across.
+  const selectToggle = document.getElementById('library-select-toggle');
+  if (tab === 'manga') {
+    selectToggle.classList.remove('hidden');
+  } else {
+    selectToggle.classList.add('hidden');
+    exitSelectMode();
+  }
   loadLibrary();
 }
 
@@ -2266,8 +2332,21 @@ function renderLibraryManga(item, index) {
     ? `<img src="${escapeHtml(item.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" data-ph-title="${escapeHtml(item.name || '')}" data-ph-idx="${index}">`
     : makePlaceholderHtml(item.name || '?', index);
 
+  const selected = state.selectedSeries.has(item.id);
+  const selectClasses = state.selectMode ? 'cursor-pointer' : '';
+  const ring = selected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-slate-800 hover:border-slate-600';
+
+  // In select mode the whole card toggles selection; a checkbox badge shows state.
+  const selectOverlay = state.selectMode
+    ? `<div class="absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${selected ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 border border-slate-500 text-transparent'}">&#x2713;</div>`
+    : '';
+  const cardAttrs = state.selectMode
+    ? `data-action="toggleSeriesSelect" data-id="${escapeHtml(String(item.id))}" data-name="${escapeHtml(item.name || '')}"`
+    : '';
+
   return `
-    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600">
+    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border relative ${ring} ${selectClasses}" ${cardAttrs}>
+      ${selectOverlay}
       ${coverHtml}
       <div class="p-3">
         <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(item.name || 'Unknown')}</h3>
@@ -2275,10 +2354,269 @@ function renderLibraryManga(item, index) {
           ${item.pages ? `<span>${t('n_pages', {n: item.pages})}</span>` : ''}
           ${item.library ? `<span>${escapeHtml(item.library)}</span>` : ''}
         </div>
-        ${item.kavita_url ? `<a href="${escapeHtml(item.kavita_url)}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">${t('open_in_kavita')}</a>` : ''}
+        ${!state.selectMode && item.kavita_url ? `<a href="${escapeHtml(item.kavita_url)}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">${t('open_in_kavita')}</a>` : ''}
       </div>
     </div>
   `;
+}
+
+// ============================================================
+// BULK METADATA EDITING (Kavita)
+// ============================================================
+
+function toggleSelectMode() {
+  state.selectMode = !state.selectMode;
+  const toggle = document.getElementById('library-select-toggle');
+  toggle.classList.toggle('bg-indigo-600', state.selectMode);
+  toggle.classList.toggle('text-white', state.selectMode);
+  if (!state.selectMode) state.selectedSeries.clear();
+  updateSelectionBar();
+  loadLibrary();
+}
+
+function exitSelectMode() {
+  if (!state.selectMode && state.selectedSeries.size === 0) return;
+  state.selectMode = false;
+  state.selectedSeries.clear();
+  const toggle = document.getElementById('library-select-toggle');
+  toggle.classList.remove('bg-indigo-600', 'text-white');
+  updateSelectionBar();
+}
+
+function toggleSeriesSelect(id, name) {
+  // Kavita series ids are integers; keep the map keyed numerically.
+  const key = Number(id);
+  if (state.selectedSeries.has(key)) {
+    state.selectedSeries.delete(key);
+  } else {
+    state.selectedSeries.set(key, name);
+  }
+  updateSelectionBar();
+  loadLibrary();
+}
+
+function clearSelection() {
+  state.selectedSeries.clear();
+  updateSelectionBar();
+  loadLibrary();
+}
+
+function updateSelectionBar() {
+  const bar = document.getElementById('library-selection-bar');
+  const count = state.selectedSeries.size;
+  document.getElementById('selection-count').textContent = count;
+  if (state.selectMode && count > 0) {
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+  } else {
+    bar.classList.add('hidden');
+    bar.classList.remove('flex');
+  }
+}
+
+async function openMetadataModal() {
+  if (state.selectedSeries.size === 0) return;
+  const modal = document.getElementById('metadata-modal');
+  document.getElementById('metadata-modal-count').textContent = state.selectedSeries.size;
+  document.getElementById('metadata-modal-error').classList.add('hidden');
+
+  // Reset all rows.
+  document.querySelectorAll('#metadata-fields .metadata-row').forEach(row => {
+    const cb = row.querySelector('.meta-enable');
+    const val = row.querySelector('.meta-value');
+    cb.checked = false;
+    val.disabled = true;
+    val.value = '';
+  });
+  document.querySelector('input[name="meta-list-mode"][value="set"]').checked = true;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  // Online lookup matches one title at a time, so it's gated to a single
+  // selected series (bulk multi-series editing stays manual).
+  const online = document.getElementById('metadata-online');
+  document.getElementById('metadata-online-results').innerHTML = '';
+  document.getElementById('metadata-online-status').classList.add('hidden');
+  if (state.selectedSeries.size === 1) {
+    online.classList.remove('hidden');
+    const [, name] = [...state.selectedSeries.entries()][0];
+    document.getElementById('metadata-online-query').value = name || '';
+  } else {
+    online.classList.add('hidden');
+  }
+
+  // Pre-fill when exactly one series is selected (single-item edit).
+  if (state.selectedSeries.size === 1) {
+    const [id] = state.selectedSeries.keys();
+    try {
+      const md = await apiJson(`/api/library/manga/series/${id}/metadata`);
+      prefillMetadataField('authors', (md.authors || []).join(', '));
+      prefillMetadataField('genres', (md.genres || []).join(', '));
+      prefillMetadataField('tags', (md.tags || []).join(', '));
+      prefillMetadataField('publisher', (md.publishers || [])[0] || '');
+      prefillMetadataField('language', md.language || '');
+      prefillMetadataField('summary', md.summary || '');
+    } catch (err) {
+      // Non-fatal: the form just stays blank if prefill fails.
+    }
+  }
+}
+
+function prefillMetadataField(field, value) {
+  if (!value) return;
+  const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
+  if (row) row.querySelector('.meta-value').value = value;
+}
+
+// Holds the last online-search candidates so a click can prefill from the full
+// object (rather than re-encoding it into the DOM).
+let metadataCandidates = [];
+
+async function searchOnlineMetadata() {
+  const q = document.getElementById('metadata-online-query').value.trim();
+  const type = document.getElementById('metadata-online-source').value;
+  const statusEl = document.getElementById('metadata-online-status');
+  const resultsEl = document.getElementById('metadata-online-results');
+  if (!q) return;
+
+  statusEl.textContent = t('searching') || 'Searching…';
+  statusEl.classList.remove('hidden');
+  resultsEl.innerHTML = '';
+  metadataCandidates = [];
+
+  try {
+    const data = await apiJson(`/api/metadata/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`);
+    metadataCandidates = data.candidates || [];
+    if (metadataCandidates.length === 0) {
+      statusEl.textContent = t('no_matches') || 'No matches found.';
+      return;
+    }
+    statusEl.classList.add('hidden');
+    resultsEl.innerHTML = metadataCandidates.map((c, i) => renderMetadataCandidate(c, i)).join('');
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      statusEl.textContent = err.message || t('search_failed') || 'Search failed.';
+    }
+  }
+}
+
+function renderMetadataCandidate(c, index) {
+  const cover = c.cover_url
+    ? `<img src="${escapeHtml(c.cover_url)}" alt="" class="h-14 w-10 object-cover rounded flex-shrink-0" loading="lazy">`
+    : '<div class="h-14 w-10 rounded bg-slate-700 flex-shrink-0"></div>';
+  const meta = [c.year, c.authors && c.authors.join(', ')].filter(Boolean).join(' · ');
+  const link = c.site_url
+    ? `<a href="${escapeHtml(c.site_url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 text-xs">↗</a>`
+    : '';
+  return `
+    <div class="metadata-candidate flex items-start gap-3 p-2 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors" data-action="applyMetadataCandidate" data-idx="${index}">
+      ${cover}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-1.5"><span class="text-sm font-medium text-white line-clamp-1">${escapeHtml(c.title || 'Unknown')}</span>${link}</div>
+        <div class="text-xs text-slate-400 line-clamp-1">${escapeHtml(meta)}</div>
+        <div class="text-xs text-slate-500 line-clamp-2 mt-0.5">${escapeHtml(c.summary || '')}</div>
+      </div>
+    </div>`;
+}
+
+// applyMetadataCandidate prefills the editable rows from a chosen candidate and
+// enables each field it populated so the user can review before saving.
+function applyMetadataCandidate(index) {
+  const c = metadataCandidates[index];
+  if (!c) return;
+  const apply = (field, value) => {
+    if (!value) return;
+    const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
+    if (!row) return;
+    row.querySelector('.meta-value').value = value;
+    const cb = row.querySelector('.meta-enable');
+    cb.checked = true;
+    row.querySelector('.meta-value').disabled = false;
+  };
+  apply('authors', (c.authors || []).join(', '));
+  apply('genres', (c.genres || []).join(', '));
+  apply('tags', (c.tags || []).join(', '));
+  apply('publisher', c.publisher || '');
+  apply('language', c.language || '');
+  apply('summary', c.summary || '');
+
+  // Highlight the chosen candidate.
+  document.querySelectorAll('.metadata-candidate').forEach(el => {
+    el.classList.toggle('border-indigo-500', +el.dataset.idx === index);
+    el.classList.toggle('bg-indigo-500/10', +el.dataset.idx === index);
+  });
+}
+
+function closeMetadataModal() {
+  const modal = document.getElementById('metadata-modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+async function saveMetadata() {
+  const ids = [...state.selectedSeries.keys()];
+  if (ids.length === 0) return;
+
+  const listFields = new Set(['authors', 'genres', 'tags']);
+  const fields = {};
+  let anyEnabled = false;
+  document.querySelectorAll('#metadata-fields .metadata-row').forEach(row => {
+    if (!row.querySelector('.meta-enable').checked) return;
+    anyEnabled = true;
+    const key = row.dataset.field;
+    const raw = row.querySelector('.meta-value').value;
+    if (listFields.has(key)) {
+      fields[key] = raw.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      fields[key] = raw;
+    }
+  });
+
+  const errEl = document.getElementById('metadata-modal-error');
+  if (!anyEnabled) {
+    errEl.textContent = t('metadata_no_fields') || 'Enable at least one field to write.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const mode = document.querySelector('input[name="meta-list-mode"]:checked').value;
+  const btn = document.getElementById('metadata-save-btn');
+  btn.disabled = true;
+  btn.textContent = t('writing') || 'Writing…';
+
+  try {
+    // Use api() directly so a 4xx body's {error} message reaches the user
+    // instead of apiJson's generic "API error: 400".
+    const resp = await api('/api/library/metadata/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ series_ids: ids, mode, fields }),
+    });
+    const res = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(res.error || `API error: ${resp.status}`);
+    }
+    const fileErrors = (res.results || []).reduce((n, r) => n + (r.errors ? r.errors.length : 0), 0);
+    if (fileErrors > 0) {
+      showToast(
+        `Wrote ${res.files_written} file(s) across ${res.series_count} series, ${fileErrors} issue(s)`,
+        'warning'
+      );
+    } else {
+      showToast(`Wrote metadata to ${res.files_written} file(s) across ${res.series_count} series`, 'success');
+    }
+    closeMetadataModal();
+    exitSelectMode();
+    loadLibrary();
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      errEl.textContent = err.message || 'Failed to write metadata';
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('save_write_files') || 'Save & write files';
+  }
 }
 
 async function deleteLibraryItem(id, type, title) {
@@ -2525,7 +2863,7 @@ const INTEGRATION_FIELDS = {
   transmission:   ['transmission_url', 'transmission_user', 'transmission_pass', 'torrent_client'],
   sabnzbd:        ['sabnzbd_url', 'sabnzbd_api_key', 'sabnzbd_category'],
   audiobookshelf: ['abs_url', 'abs_token'],
-  kavita:         ['kavita_url', 'kavita_user', 'kavita_pass'],
+  kavita:         ['kavita_url', 'kavita_user', 'kavita_pass', 'kavita_path_map'],
   komga:          ['komga_url', 'komga_user', 'komga_pass'],
   calibre:        ['calibre_url', 'calibre_library_path'],
 };
@@ -3131,6 +3469,14 @@ const CLICK_ACTIONS = {
   retryDownload: el => retryDownload(el.dataset.jobId),
   deleteLibraryItem: el => deleteLibraryItem(el.dataset.id, el.dataset.type, el.dataset.title),
   goLibraryPage: el => goLibraryPage(+el.dataset.page),
+  toggleSelectMode: () => toggleSelectMode(),
+  toggleSeriesSelect: el => toggleSeriesSelect(el.dataset.id, el.dataset.name),
+  clearSelection: () => clearSelection(),
+  openMetadataModal: () => openMetadataModal(),
+  closeMetadataModal: () => closeMetadataModal(),
+  saveMetadata: () => saveMetadata(),
+  searchOnlineMetadata: () => searchOnlineMetadata(),
+  applyMetadataCandidate: el => applyMetadataCandidate(+el.dataset.idx),
   searchWishlistItem: el => searchWishlistItem(el.dataset.title, el.dataset.mediaType),
   deleteWishlistItem: el => deleteWishlistItem(+el.dataset.id),
   deleteUser: el => deleteUser(+el.dataset.id, el.dataset.username),
@@ -3156,9 +3502,20 @@ const CHANGE_ACTIONS = {
 
 document.addEventListener('change', e => {
   const el = e.target.closest('[data-action-change]');
-  if (!el) return;
-  const fn = CHANGE_ACTIONS[el.dataset.actionChange];
-  if (fn) fn(el, e);
+  if (el) {
+    const fn = CHANGE_ACTIONS[el.dataset.actionChange];
+    if (fn) fn(el, e);
+    return;
+  }
+  // Bulk-metadata row toggles: enabling the checkbox unlocks the value input.
+  if (e.target.classList && e.target.classList.contains('meta-enable')) {
+    const row = e.target.closest('.metadata-row');
+    if (row) {
+      const val = row.querySelector('.meta-value');
+      val.disabled = !e.target.checked;
+      if (e.target.checked) val.focus();
+    }
+  }
 });
 
 // Cover-image fallback (replaces inline onerror=). 'error' events don't
