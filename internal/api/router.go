@@ -317,9 +317,6 @@ func (s *Server) registerLibraryRoutes() {
 	s.mux.HandleFunc("POST /api/library/metadata/bulk", requireAdmin(s.handleBulkMetadata))
 	// Online metadata lookup to pre-fill the bulk editor (AniList/Open Library).
 	s.mux.HandleFunc("GET /api/metadata/search", requireAdmin(s.handleMetadataSearch))
-	// Bulk auto-match: look up every selected series on AniList, review, apply.
-	s.mux.HandleFunc("POST /api/metadata/bulk-match", requireAdmin(s.handleBulkMatch))
-	s.mux.HandleFunc("POST /api/metadata/bulk-apply", requireAdmin(s.handleBulkMatchApply))
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 

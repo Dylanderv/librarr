@@ -126,16 +126,6 @@ const I18N = {
     searching: 'Searching…',
     no_matches: 'No matches found.',
     search_failed: 'Search failed.',
-    auto_match_online: 'Auto-match online',
-    review_matches_help: 'Review the matches found on AniList, then write them into the files.',
-    apply_write_files: 'Apply & write files',
-    matching: 'Matching against AniList…',
-    matches_found: '{n} of {total} matched.',
-    no_match: 'No match found',
-    genres_short: 'genres',
-    tags_short: 'tags',
-    summary_short: 'summary',
-    nothing_to_apply: 'Nothing selected to apply.',
     prev: 'Prev',
     next: 'Next',
     // Downloads
@@ -383,16 +373,6 @@ const I18N = {
     searching: 'Поиск…',
     no_matches: 'Совпадений не найдено.',
     search_failed: 'Ошибка поиска.',
-    auto_match_online: 'Авто-поиск онлайн',
-    review_matches_help: 'Проверьте совпадения из AniList, затем запишите их в файлы.',
-    apply_write_files: 'Применить и записать файлы',
-    matching: 'Поиск в AniList…',
-    matches_found: 'Совпадений: {n} из {total}.',
-    no_match: 'Совпадений не найдено',
-    genres_short: 'жанров',
-    tags_short: 'тегов',
-    summary_short: 'описание',
-    nothing_to_apply: 'Нечего применять.',
     prev: 'Назад',
     next: 'Далее',
     // Downloads
@@ -2466,20 +2446,20 @@ async function openMetadataModal() {
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 
-  // Online lookup matches one title at a time, so it's gated to a single
-  // selected series (bulk multi-series editing stays manual).
+  // Online lookup is always available. Every editable field here is
+  // series-level (author, genres, tags…), so applying one AniList result to
+  // all selected series is valid — a multi-selection is the user asserting
+  // these belong to the same series. The query prefills from the first
+  // selected series' name; the user can edit it before searching.
   const online = document.getElementById('metadata-online');
+  online.classList.remove('hidden');
   document.getElementById('metadata-online-results').innerHTML = '';
   document.getElementById('metadata-online-status').classList.add('hidden');
-  if (state.selectedSeries.size === 1) {
-    online.classList.remove('hidden');
-    const [, name] = [...state.selectedSeries.entries()][0];
-    document.getElementById('metadata-online-query').value = name || '';
-  } else {
-    online.classList.add('hidden');
-  }
+  const [, firstName] = [...state.selectedSeries.entries()][0];
+  document.getElementById('metadata-online-query').value = firstName || '';
 
-  // Pre-fill when exactly one series is selected (single-item edit).
+  // Pre-fill existing values from Kavita only for a single-series edit — these
+  // are read per-series and can't be meaningfully merged across a selection.
   if (state.selectedSeries.size === 1) {
     const [id] = state.selectedSeries.keys();
     try {
@@ -2650,159 +2630,6 @@ async function saveMetadata() {
     btn.disabled = false;
     btn.textContent = t('save_write_files') || 'Save & write files';
   }
-}
-
-// ============================================================
-// BULK AUTO-MATCH (online) — match each selected series on AniList, review, apply
-// ============================================================
-
-// Holds the last bulk-match results (one entry per selected series) so applying
-// can read each series' matched fields without re-encoding them into the DOM.
-let bulkMatchResults = [];
-
-async function openBulkMatch() {
-  if (state.selectedSeries.size === 0) return;
-  const modal = document.getElementById('bulk-match-modal');
-  const listEl = document.getElementById('bulk-match-list');
-  const statusEl = document.getElementById('bulk-match-status');
-  const errEl = document.getElementById('bulk-match-error');
-  const applyBtn = document.getElementById('bulk-match-apply-btn');
-
-  bulkMatchResults = [];
-  listEl.innerHTML = '';
-  errEl.classList.add('hidden');
-  applyBtn.disabled = true;
-  document.querySelector('input[name="bulk-match-list-mode"][value="set"]').checked = true;
-  statusEl.textContent = t('matching') || 'Matching against AniList…';
-
-  modal.classList.remove('hidden');
-  modal.classList.add('flex');
-
-  const ids = [...state.selectedSeries.keys()];
-  try {
-    const resp = await api('/api/metadata/bulk-match', {
-      method: 'POST',
-      body: JSON.stringify({ series_ids: ids }),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.error || `API error: ${resp.status}`);
-
-    bulkMatchResults = data.results || [];
-    const found = bulkMatchResults.filter(r => r.matched).length;
-    statusEl.textContent = (t('matches_found') || '{n} of {total} matched.')
-      .replace('{n}', found).replace('{total}', bulkMatchResults.length);
-    listEl.innerHTML = bulkMatchResults.map((r, i) => renderBulkMatchRow(r, i)).join('');
-    updateBulkMatchApplyState();
-  } catch (err) {
-    if (err.message !== 'Unauthorized') {
-      statusEl.textContent = '';
-      errEl.textContent = err.message || 'Match failed';
-      errEl.classList.remove('hidden');
-    }
-  }
-}
-
-function renderBulkMatchRow(res, index) {
-  const c = res.matched;
-  if (!c) {
-    return `
-      <div class="flex items-center gap-3 p-2 rounded-lg border border-slate-800 bg-slate-800/30 opacity-60">
-        <div class="h-14 w-10 rounded bg-slate-700 flex-shrink-0"></div>
-        <div class="min-w-0 flex-1">
-          <div class="text-sm font-medium text-white line-clamp-1">${escapeHtml(res.series_name || '?')}</div>
-          <div class="text-xs text-amber-400">${escapeHtml(t('no_match') || 'No match found')}</div>
-        </div>
-      </div>`;
-  }
-  const cover = c.cover_url
-    ? `<img src="${escapeHtml(c.cover_url)}" alt="" class="h-14 w-10 object-cover rounded flex-shrink-0" loading="lazy">`
-    : '<div class="h-14 w-10 rounded bg-slate-700 flex-shrink-0"></div>';
-  const bits = [];
-  if (c.authors && c.authors.length) bits.push(c.authors.join(', '));
-  if (c.genres && c.genres.length) bits.push(`${c.genres.length} ${t('genres_short') || 'genres'}`);
-  if (c.tags && c.tags.length) bits.push(`${c.tags.length} ${t('tags_short') || 'tags'}`);
-  if (c.summary) bits.push(t('summary_short') || 'summary');
-  const link = c.site_url
-    ? `<a href="${escapeHtml(c.site_url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 text-xs">↗</a>`
-    : '';
-  return `
-    <label class="flex items-start gap-3 p-2 rounded-lg border border-slate-700 hover:border-emerald-500 cursor-pointer transition-colors">
-      <input type="checkbox" class="bulk-match-cb accent-emerald-500 mt-1" data-idx="${index}" checked>
-      ${cover}
-      <div class="min-w-0 flex-1">
-        <div class="text-xs text-slate-500 line-clamp-1">${escapeHtml(res.series_name || '')}</div>
-        <div class="flex items-center gap-1.5"><span class="text-sm font-medium text-white line-clamp-1">→ ${escapeHtml(c.title || 'Unknown')}</span>${c.year ? `<span class="text-xs text-slate-500">${escapeHtml(c.year)}</span>` : ''}${link}</div>
-        <div class="text-xs text-slate-400 line-clamp-1 mt-0.5">${escapeHtml(bits.join(' · '))}</div>
-      </div>
-    </label>`;
-}
-
-function updateBulkMatchApplyState() {
-  const checked = document.querySelectorAll('#bulk-match-list .bulk-match-cb:checked').length;
-  document.getElementById('bulk-match-apply-btn').disabled = checked === 0;
-}
-
-async function applyBulkMatch() {
-  const mode = document.querySelector('input[name="bulk-match-list-mode"]:checked').value;
-  const errEl = document.getElementById('bulk-match-error');
-  errEl.classList.add('hidden');
-
-  const items = [];
-  document.querySelectorAll('#bulk-match-list .bulk-match-cb:checked').forEach(cb => {
-    const res = bulkMatchResults[+cb.dataset.idx];
-    if (!res || !res.matched) return;
-    const c = res.matched;
-    const fields = {};
-    if (c.authors && c.authors.length) fields.authors = c.authors;
-    if (c.genres && c.genres.length) fields.genres = c.genres;
-    if (c.tags && c.tags.length) fields.tags = c.tags;
-    if (c.summary) fields.summary = c.summary;
-    if (c.publisher) fields.publisher = c.publisher;
-    if (c.language) fields.language = c.language;
-    if (Object.keys(fields).length > 0) items.push({ series_id: res.series_id, fields });
-  });
-
-  if (items.length === 0) {
-    errEl.textContent = t('nothing_to_apply') || 'Nothing selected to apply.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  const btn = document.getElementById('bulk-match-apply-btn');
-  btn.disabled = true;
-  btn.textContent = t('writing') || 'Writing…';
-  try {
-    const resp = await api('/api/metadata/bulk-apply', {
-      method: 'POST',
-      body: JSON.stringify({ mode, items }),
-    });
-    const res = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(res.error || `API error: ${resp.status}`);
-
-    const fileErrors = (res.results || []).reduce((n, r) => n + (r.errors ? r.errors.length : 0), 0);
-    if (fileErrors > 0) {
-      showToast(`Wrote ${res.files_written} file(s) across ${res.series_count} series, ${fileErrors} issue(s)`, 'warning');
-    } else {
-      showToast(`Wrote metadata to ${res.files_written} file(s) across ${res.series_count} series`, 'success');
-    }
-    closeBulkMatch();
-    exitSelectMode();
-    loadLibrary();
-  } catch (err) {
-    if (err.message !== 'Unauthorized') {
-      errEl.textContent = err.message || 'Failed to write metadata';
-      errEl.classList.remove('hidden');
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = t('apply_write_files') || 'Apply & write files';
-  }
-}
-
-function closeBulkMatch() {
-  const modal = document.getElementById('bulk-match-modal');
-  modal.classList.add('hidden');
-  modal.classList.remove('flex');
 }
 
 async function deleteLibraryItem(id, type, title) {
@@ -3663,9 +3490,6 @@ const CLICK_ACTIONS = {
   saveMetadata: () => saveMetadata(),
   searchOnlineMetadata: () => searchOnlineMetadata(),
   applyMetadataCandidate: el => applyMetadataCandidate(+el.dataset.idx),
-  openBulkMatch: () => openBulkMatch(),
-  closeBulkMatch: () => closeBulkMatch(),
-  applyBulkMatch: () => applyBulkMatch(),
   searchWishlistItem: el => searchWishlistItem(el.dataset.title, el.dataset.mediaType),
   deleteWishlistItem: el => deleteWishlistItem(+el.dataset.id),
   deleteUser: el => deleteUser(+el.dataset.id, el.dataset.username),
@@ -3704,10 +3528,6 @@ document.addEventListener('change', e => {
       val.disabled = !e.target.checked;
       if (e.target.checked) val.focus();
     }
-  }
-  // Bulk auto-match row toggles: enable Apply only when something is checked.
-  if (e.target.classList && e.target.classList.contains('bulk-match-cb')) {
-    updateBulkMatchApplyState();
   }
 });
 
