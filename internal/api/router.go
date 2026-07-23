@@ -14,6 +14,7 @@ import (
 	"github.com/JeremiahM37/librarr/internal/db"
 	"github.com/JeremiahM37/librarr/internal/download"
 	"github.com/JeremiahM37/librarr/internal/metadata"
+	"github.com/JeremiahM37/librarr/internal/metadata/anilist"
 	"github.com/JeremiahM37/librarr/internal/organize"
 	"github.com/JeremiahM37/librarr/internal/scheduler"
 	"github.com/JeremiahM37/librarr/internal/search"
@@ -40,6 +41,7 @@ type Server struct {
 	rateLimiter    *RateLimiter
 	oidc           *OIDCHandler
 	metadataClient *metadata.Client
+	anilistClient  *anilist.Client
 	organizer      *organize.Organizer
 	targets        *organize.LibraryTargets
 	webhookSender  *webhook.Sender
@@ -112,6 +114,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		sessions:       sessions,
 		metrics:        NewMetricsCollector(),
 		metadataClient: metadata.NewClient(&http.Client{Timeout: 15 * time.Second}),
+		anilistClient:  anilist.NewClient(&http.Client{Timeout: 15 * time.Second}),
 		organizer:      organizer,
 		targets:        targets,
 		webhookSender:  ws,
@@ -312,6 +315,8 @@ func (s *Server) registerLibraryRoutes() {
 	// Kavita metadata editing (writes to the media files, then rescans).
 	s.mux.HandleFunc("GET /api/library/manga/series/{id}/metadata", requireAdmin(s.handleSeriesMetadata))
 	s.mux.HandleFunc("POST /api/library/metadata/bulk", requireAdmin(s.handleBulkMetadata))
+	// Online metadata lookup to pre-fill the bulk editor (AniList/Open Library).
+	s.mux.HandleFunc("GET /api/metadata/search", requireAdmin(s.handleMetadataSearch))
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 

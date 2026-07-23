@@ -119,6 +119,13 @@ const I18N = {
     save_write_files: 'Save & write files',
     metadata_no_fields: 'Enable at least one field to write.',
     writing: 'Writing…',
+    metadata_online_help: 'Fetch metadata from an online database to pre-fill the fields below, then review before saving.',
+    search_online: 'Search online',
+    source_manga: 'Manga (AniList)',
+    source_book: 'Book (Open Library)',
+    searching: 'Searching…',
+    no_matches: 'No matches found.',
+    search_failed: 'Search failed.',
     prev: 'Prev',
     next: 'Next',
     // Downloads
@@ -359,6 +366,13 @@ const I18N = {
     save_write_files: 'Сохранить и записать файлы',
     metadata_no_fields: 'Включите хотя бы одно поле для записи.',
     writing: 'Запись…',
+    metadata_online_help: 'Получите метаданные из онлайн-базы, чтобы заполнить поля ниже, затем проверьте перед сохранением.',
+    search_online: 'Искать онлайн',
+    source_manga: 'Манга (AniList)',
+    source_book: 'Книга (Open Library)',
+    searching: 'Поиск…',
+    no_matches: 'Совпадений не найдено.',
+    search_failed: 'Ошибка поиска.',
     prev: 'Назад',
     next: 'Далее',
     // Downloads
@@ -2419,6 +2433,19 @@ async function openMetadataModal() {
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 
+  // Online lookup matches one title at a time, so it's gated to a single
+  // selected series (bulk multi-series editing stays manual).
+  const online = document.getElementById('metadata-online');
+  document.getElementById('metadata-online-results').innerHTML = '';
+  document.getElementById('metadata-online-status').classList.add('hidden');
+  if (state.selectedSeries.size === 1) {
+    online.classList.remove('hidden');
+    const [, name] = [...state.selectedSeries.entries()][0];
+    document.getElementById('metadata-online-query').value = name || '';
+  } else {
+    online.classList.add('hidden');
+  }
+
   // Pre-fill when exactly one series is selected (single-item edit).
   if (state.selectedSeries.size === 1) {
     const [id] = state.selectedSeries.keys();
@@ -2440,6 +2467,85 @@ function prefillMetadataField(field, value) {
   if (!value) return;
   const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
   if (row) row.querySelector('.meta-value').value = value;
+}
+
+// Holds the last online-search candidates so a click can prefill from the full
+// object (rather than re-encoding it into the DOM).
+let metadataCandidates = [];
+
+async function searchOnlineMetadata() {
+  const q = document.getElementById('metadata-online-query').value.trim();
+  const type = document.getElementById('metadata-online-source').value;
+  const statusEl = document.getElementById('metadata-online-status');
+  const resultsEl = document.getElementById('metadata-online-results');
+  if (!q) return;
+
+  statusEl.textContent = t('searching') || 'Searching…';
+  statusEl.classList.remove('hidden');
+  resultsEl.innerHTML = '';
+  metadataCandidates = [];
+
+  try {
+    const data = await apiJson(`/api/metadata/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`);
+    metadataCandidates = data.candidates || [];
+    if (metadataCandidates.length === 0) {
+      statusEl.textContent = t('no_matches') || 'No matches found.';
+      return;
+    }
+    statusEl.classList.add('hidden');
+    resultsEl.innerHTML = metadataCandidates.map((c, i) => renderMetadataCandidate(c, i)).join('');
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      statusEl.textContent = err.message || t('search_failed') || 'Search failed.';
+    }
+  }
+}
+
+function renderMetadataCandidate(c, index) {
+  const cover = c.cover_url
+    ? `<img src="${escapeHtml(c.cover_url)}" alt="" class="h-14 w-10 object-cover rounded flex-shrink-0" loading="lazy">`
+    : '<div class="h-14 w-10 rounded bg-slate-700 flex-shrink-0"></div>';
+  const meta = [c.year, c.authors && c.authors.join(', ')].filter(Boolean).join(' · ');
+  const link = c.site_url
+    ? `<a href="${escapeHtml(c.site_url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 text-xs">↗</a>`
+    : '';
+  return `
+    <div class="metadata-candidate flex items-start gap-3 p-2 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors" data-action="applyMetadataCandidate" data-idx="${index}">
+      ${cover}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-1.5"><span class="text-sm font-medium text-white line-clamp-1">${escapeHtml(c.title || 'Unknown')}</span>${link}</div>
+        <div class="text-xs text-slate-400 line-clamp-1">${escapeHtml(meta)}</div>
+        <div class="text-xs text-slate-500 line-clamp-2 mt-0.5">${escapeHtml(c.summary || '')}</div>
+      </div>
+    </div>`;
+}
+
+// applyMetadataCandidate prefills the editable rows from a chosen candidate and
+// enables each field it populated so the user can review before saving.
+function applyMetadataCandidate(index) {
+  const c = metadataCandidates[index];
+  if (!c) return;
+  const apply = (field, value) => {
+    if (!value) return;
+    const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
+    if (!row) return;
+    row.querySelector('.meta-value').value = value;
+    const cb = row.querySelector('.meta-enable');
+    cb.checked = true;
+    row.querySelector('.meta-value').disabled = false;
+  };
+  apply('authors', (c.authors || []).join(', '));
+  apply('genres', (c.genres || []).join(', '));
+  apply('tags', (c.tags || []).join(', '));
+  apply('publisher', c.publisher || '');
+  apply('language', c.language || '');
+  apply('summary', c.summary || '');
+
+  // Highlight the chosen candidate.
+  document.querySelectorAll('.metadata-candidate').forEach(el => {
+    el.classList.toggle('border-indigo-500', +el.dataset.idx === index);
+    el.classList.toggle('bg-indigo-500/10', +el.dataset.idx === index);
+  });
 }
 
 function closeMetadataModal() {
@@ -3369,6 +3475,8 @@ const CLICK_ACTIONS = {
   openMetadataModal: () => openMetadataModal(),
   closeMetadataModal: () => closeMetadataModal(),
   saveMetadata: () => saveMetadata(),
+  searchOnlineMetadata: () => searchOnlineMetadata(),
+  applyMetadataCandidate: el => applyMetadataCandidate(+el.dataset.idx),
   searchWishlistItem: el => searchWishlistItem(el.dataset.title, el.dataset.mediaType),
   deleteWishlistItem: el => deleteWishlistItem(+el.dataset.id),
   deleteUser: el => deleteUser(+el.dataset.id, el.dataset.username),
