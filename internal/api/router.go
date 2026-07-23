@@ -308,6 +308,10 @@ func (s *Server) registerLibraryRoutes() {
 	s.mux.HandleFunc("GET /api/library/manga", s.handleLibraryManga)
 	s.mux.HandleFunc("DELETE /api/library/book/{id}", s.handleDeleteBook)
 	s.mux.HandleFunc("DELETE /api/library/audiobook/{id}", s.handleDeleteAudiobook)
+
+	// Kavita metadata editing (writes to the media files, then rescans).
+	s.mux.HandleFunc("GET /api/library/manga/series/{id}/metadata", requireAdmin(s.handleSeriesMetadata))
+	s.mux.HandleFunc("POST /api/library/metadata/bulk", requireAdmin(s.handleBulkMetadata))
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 

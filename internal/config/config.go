@@ -4,6 +4,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +12,13 @@ import (
 	"strings"
 
 	"github.com/JeremiahM37/librarr/internal/sources"
+)
+
+// Errors returned by ResolveKavitaPath.
+var (
+	errEmptyPath        = errors.New("empty path")
+	errNoRoots          = errors.New("no Kavita library roots configured; set KAVITA_LIBRARY_PATH, KAVITA_MANGA_LIBRARY_PATH, or KAVITA_PATH_MAP")
+	errPathOutsideRoots = errors.New("resolved path is outside allowed library roots")
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -78,10 +86,16 @@ type Config struct {
 	KavitaPass             string
 	KavitaLibraryPath      string
 	KavitaMangaLibraryPath string
-	ABSURL                 string
-	ABSToken               string
-	ABSLibraryID           string
-	ABSEbookLibraryID      string
+	// KavitaPathMap remaps the absolute paths Kavita reports (as seen inside
+	// its container) to paths librarr can reach on its own filesystem, for the
+	// metadata-write feature. Format: comma-separated "fromPrefix:toPrefix"
+	// pairs, e.g. "/manga:/data/manga,/books:/data/books". Empty means the
+	// paths are assumed identical (shared mount).
+	KavitaPathMap     string
+	ABSURL            string
+	ABSToken          string
+	ABSLibraryID      string
+	ABSEbookLibraryID string
 
 	// Authentication
 	AuthUsername string
@@ -325,6 +339,7 @@ func buildFromEnv() *Config {
 		KavitaPass:             getEnv("KAVITA_PASS", ""),
 		KavitaLibraryPath:      getEnv("KAVITA_LIBRARY_PATH", ""),
 		KavitaMangaLibraryPath: getEnv("KAVITA_MANGA_LIBRARY_PATH", ""),
+		KavitaPathMap:          getEnv("KAVITA_PATH_MAP", ""),
 		ABSURL:                 getEnv("ABS_URL", ""),
 		ABSToken:               getEnv("ABS_TOKEN", ""),
 		ABSLibraryID:           getEnv("ABS_LIBRARY_ID", ""),
@@ -446,6 +461,78 @@ func (c *Config) HasProwlarr() bool {
 // HasAudiobookshelf returns true if ABS is configured.
 func (c *Config) HasAudiobookshelf() bool {
 	return c.ABSURL != "" && c.ABSToken != ""
+}
+
+// kavitaPathMappings parses KavitaPathMap into (from, to) prefix pairs.
+func (c *Config) kavitaPathMappings() [][2]string {
+	var pairs [][2]string
+	for _, entry := range strings.Split(c.KavitaPathMap, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		// Split on the last colon so Windows-style "C:\..." targets survive;
+		// in practice these are container POSIX paths.
+		idx := strings.LastIndex(entry, ":")
+		if idx <= 0 || idx == len(entry)-1 {
+			continue
+		}
+		from := strings.TrimRight(strings.TrimSpace(entry[:idx]), "/")
+		to := strings.TrimRight(strings.TrimSpace(entry[idx+1:]), "/")
+		if from != "" && to != "" {
+			pairs = append(pairs, [2]string{from, to})
+		}
+	}
+	return pairs
+}
+
+// KavitaAllowedRoots returns the set of directories under which librarr is
+// permitted to write book files. A resolved path outside every root is
+// rejected as a safety measure against path traversal.
+func (c *Config) KavitaAllowedRoots() []string {
+	var roots []string
+	add := func(p string) {
+		if p = strings.TrimRight(strings.TrimSpace(p), "/"); p != "" {
+			roots = append(roots, p)
+		}
+	}
+	add(c.KavitaLibraryPath)
+	add(c.KavitaMangaLibraryPath)
+	for _, m := range c.kavitaPathMappings() {
+		add(m[1])
+	}
+	return roots
+}
+
+// ResolveKavitaPath translates an absolute path reported by Kavita into a path
+// librarr can write, applying KavitaPathMap and validating the result stays
+// within an allowed root. It returns an error when no roots are configured
+// (nothing to validate against) or when the path escapes them.
+func (c *Config) ResolveKavitaPath(kavitaPath string) (string, error) {
+	if kavitaPath == "" {
+		return "", errEmptyPath
+	}
+
+	resolved := kavitaPath
+	for _, m := range c.kavitaPathMappings() {
+		if kavitaPath == m[0] || strings.HasPrefix(kavitaPath, m[0]+"/") {
+			resolved = m[1] + kavitaPath[len(m[0]):]
+			break
+		}
+	}
+	resolved = filepath.Clean(resolved)
+
+	roots := c.KavitaAllowedRoots()
+	if len(roots) == 0 {
+		return "", errNoRoots
+	}
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		if resolved == root || strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+			return resolved, nil
+		}
+	}
+	return "", errPathOutsideRoots
 }
 
 // HasKavita returns true if Kavita is configured.
@@ -574,6 +661,7 @@ func (c *Config) applySettingsFileOverrides() {
 		"kavita_pass":               &c.KavitaPass,
 		"kavita_library_path":       &c.KavitaLibraryPath,
 		"kavita_manga_library_path": &c.KavitaMangaLibraryPath,
+		"kavita_path_map":           &c.KavitaPathMap,
 		"kavita_public_url":         &c.KavitaPublicURL,
 		"komga_url":                 &c.KomgaURL,
 		"komga_user":                &c.KomgaUser,

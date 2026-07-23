@@ -2,6 +2,7 @@ package organize
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/kavita"
 )
 
 // LibraryTargets handles importing organized files into external libraries.
@@ -162,60 +164,12 @@ func (lt *LibraryTargets) scanKavita() {
 		return
 	}
 
-	// Login to get JWT token.
-	token, err := lt.kavitaLogin()
-	if err != nil {
-		slog.Error("kavita login failed", "error", err)
-		return
-	}
-
-	url := fmt.Sprintf("%s/api/Library/scan", lt.cfg.KavitaURL)
-	req, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		slog.Error("kavita scan request creation failed", "error", err)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := lt.client.Do(req)
-	if err != nil {
+	client := kavita.New(lt.cfg.KavitaURL, lt.cfg.KavitaUser, lt.cfg.KavitaPass)
+	if err := client.ScanLibrary(context.Background()); err != nil {
 		slog.Error("kavita scan failed", "error", err)
 		return
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode < 300 {
-		slog.Info("kavita library scan triggered")
-	} else {
-		slog.Warn("kavita scan returned non-success", "status", resp.StatusCode)
-	}
-}
-
-func (lt *LibraryTargets) kavitaLogin() (string, error) {
-	payload, _ := json.Marshal(map[string]string{
-		"username": lt.cfg.KavitaUser,
-		"password": lt.cfg.KavitaPass,
-	})
-
-	url := fmt.Sprintf("%s/api/Account/login", lt.cfg.KavitaURL)
-	resp, err := lt.client.Post(url, "application/json", bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("kavita login request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("kavita login HTTP %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("kavita login decode: %w", err)
-	}
-	return result.Token, nil
+	slog.Info("kavita library scan triggered")
 }
 
 // copyToKomga copies a manga file to the Komga library path.
