@@ -323,13 +323,14 @@
     "/api/files/kavita/scan": {
       "post": {
         "summary": "Ask Kavita to rescan its libraries (admin)",
-        "description": "Manual only: no rename or metadata write triggers a scan, so a session of many small edits costs one scan instead of one per edit. SCOPE: the scan is server-wide. root names a library from /api/files/roots and is validated, but it does not narrow the scan — Kavita's per-library scan needs a library id librarr cannot derive from a local root, so the response echoes scope=all.",
+        "description": "Manual only: no rename or metadata write triggers a scan, so a session of many small edits costs one scan instead of one per edit. SCOPE: the scan is targeted. librarr lists Kavita's libraries, translates each library's folders back to local paths through KAVITA_PATH_MAP, and scans those that overlap the requested root (in either direction — a Kavita library may sit under the root or contain it). Libraries are never matched by name. Several libraries can match one root and all of them are scanned; when none match, the request fails with 409 and a detail naming the local root and the Kavita paths compared.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["root"], "properties": {"root": {"type": "string", "enum": ["manga", "ebooks", "audiobooks"]}}}}}},
         "responses": {
-          "200": {"description": "Scan requested", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["requested"]}, "root": {"type": "string"}, "scope": {"type": "string", "enum": ["all"], "description": "All Kavita libraries are scanned, not just root"}}}}}},
+          "200": {"description": "Scan requested", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["requested"]}, "root": {"type": "string"}, "libraries": {"type": "array", "description": "The Kavita libraries actually scanned", "items": {"type": "object", "properties": {"id": {"type": "integer"}, "name": {"type": "string"}}}}}}}}},
           "400": {"description": "Invalid JSON body or missing root"},
           "404": {"description": "Unknown library root"},
-          "502": {"description": "Kavita refused or could not be reached"},
+          "409": {"description": "No Kavita library maps to this root; detail names the local root and the Kavita paths compared", "content": {"application/json": {"schema": {"type": "object", "properties": {"success": {"type": "boolean"}, "error": {"type": "string"}, "detail": {"type": "string"}}}}}},
+          "502": {"description": "Kavita refused or could not be reached; detail carries Kavita's HTTP status and reason, never an internal URL or token", "content": {"application/json": {"schema": {"type": "object", "properties": {"success": {"type": "boolean"}, "error": {"type": "string"}, "detail": {"type": "string"}}}}}},
           "503": {"description": "Kavita is not configured, or no library directory is configured"}
         }
       }

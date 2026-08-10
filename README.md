@@ -236,8 +236,11 @@ Kavita ignores PDF metadata anyway.
 
 Kavita is only ever contacted on demand, through the **Scan in Kavita** button,
 which is hidden when Kavita is not configured. No edit triggers a scan by
-itself. Note that the scan covers every Kavita library, not only the one being
-browsed.
+itself. The scan is targeted at the library being browsed: librarr lists
+Kavita's libraries, translates each one's folders back to local paths through
+`KAVITA_PATH_MAP`, and scans those that overlap the browsed root. Libraries are
+never matched by name, so a mapping that does not line up fails with an explicit
+error naming the paths compared instead of rescanning the wrong library.
 
 For the two tabs to agree, the directories above should overlap the paths Kavita
 serves (`KAVITA_LIBRARY_PATH`, `KAVITA_MANGA_LIBRARY_PATH`, the targets of
@@ -469,7 +472,7 @@ Filesystem-backed, independent of Kavita. Full payloads and error codes are in
 | GET | `/api/files/metadata` | Read one file's metadata (`?path=`) |
 | POST | `/api/files/metadata/preview` | Preview a metadata edit, file by file |
 | POST | `/api/files/metadata/apply` | Write it |
-| POST | `/api/files/kavita/scan` | Ask Kavita to rescan (manual only, all libraries) |
+| POST | `/api/files/kavita/scan` | Ask Kavita to rescan the browsed library (manual only) |
 
 ### Requests
 

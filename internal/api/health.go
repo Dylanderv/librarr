@@ -162,11 +162,25 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 // writeError logs err server-side and returns a generic message to the client.
 func writeError(w http.ResponseWriter, status int, publicMsg string, err error) {
+	writeErrorDetail(w, status, publicMsg, "", err)
+}
+
+// writeErrorDetail is writeError plus a detail line meant for the user.
+//
+// The detail is echoed to the client, so it must be built from something safe
+// to expose — an upstream HTTP status and its reason, a path the user
+// configured — never a raw error, which routinely carries internal URLs and
+// credentials. err stays server-side in the log, as with writeError.
+func writeErrorDetail(w http.ResponseWriter, status int, publicMsg, detail string, err error) {
 	if err != nil {
 		slog.Error(publicMsg, "error", err)
 	}
-	writeJSON(w, status, map[string]interface{}{
+	body := map[string]interface{}{
 		"success": false,
 		"error":   publicMsg,
-	})
+	}
+	if detail != "" {
+		body["detail"] = detail
+	}
+	writeJSON(w, status, body)
 }

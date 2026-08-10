@@ -12,10 +12,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +44,22 @@ func New(baseURL, user, pass string) *Client {
 		pass:    pass,
 		http:    &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// Library is a Kavita library: its id (the only thing a scan can be targeted
+// on), its name, its type, and the folders it watches.
+//
+// Folders holds paths as *Kavita* sees them — inside its own container, which
+// is generally not where librarr sees the same files. Config.ResolveKavitaPath
+// (KAVITA_PATH_MAP) is what translates them to local paths.
+type Library struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	// Type is Kavita's LibraryType enum: 0 Manga, 1 Comic, 2 Book, 3 Image,
+	// 4 LightNovel, 5 ComicVine. Carried for display and diagnostics only —
+	// librarr never matches a library on it.
+	Type    int      `json:"type"`
+	Folders []string `json:"folders"`
 }
 
 // Series is the trimmed-down view of a Kavita series librarr renders and edits.
@@ -91,6 +109,57 @@ type volumeDTO struct {
 	Chapters []struct {
 		Files []MangaFile `json:"files"`
 	} `json:"chapters"`
+}
+
+// APIError is a non-2xx answer from Kavita, carrying the status and the body
+// Kavita sent with it. It exists so callers can tell "Kavita said no, and here
+// is why" apart from "Kavita could not be reached at all" — the two need very
+// different fixes, and collapsing them into one opaque message is what made a
+// missing libraryId parameter hard to diagnose in production.
+type APIError struct {
+	Method string
+	Path   string
+	Status int
+	Body   string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("kavita %s %s: HTTP %d: %s", e.Method, e.Path, e.Status, e.Body)
+}
+
+// PublicErrorDetail renders err as a short explanation safe to return over
+// librarr's own HTTP API.
+//
+// It deliberately never includes the Kavita base URL, the credentials or the
+// Authorization header: transport errors from net/http embed the full request
+// URL, so anything that is not an APIError is reduced to a generic
+// unreachable message rather than being echoed. Kavita's own response body is
+// passed through (truncated), since that is the part that actually tells the
+// user what Kavita rejected.
+func PublicErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return "Kavita could not be reached"
+	}
+	detail := fmt.Sprintf("Kavita responded HTTP %d", apiErr.Status)
+	reason := strings.TrimSpace(apiErr.Body)
+	if reason == "" {
+		return detail
+	}
+	// One line, bounded: Kavita can answer with a full HTML error page.
+	if i := strings.IndexAny(reason, "\r\n"); i >= 0 {
+		reason = strings.TrimSpace(reason[:i])
+	}
+	if len(reason) > 200 {
+		reason = reason[:200] + "…"
+	}
+	if reason == "" {
+		return detail
+	}
+	return detail + ": " + reason
 }
 
 // login performs the JWT login and caches the token on the client.
@@ -196,7 +265,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		resp.Body.Close()
-		return nil, fmt.Errorf("kavita %s %s: HTTP %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, &APIError{
+			Method: method,
+			Path:   path,
+			Status: resp.StatusCode,
+			Body:   strings.TrimSpace(string(b)),
+		}
 	}
 
 	if out != nil {
@@ -204,7 +278,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 			return nil, fmt.Errorf("kavita %s %s decode: %w", method, path, err)
 		}
+		return resp, nil
 	}
+
+	// No body to decode (scan triggers and friends). Drain and close anyway:
+	// returning an unread body leaks the connection out of the pool, and these
+	// are exactly the calls made repeatedly by the import pipeline.
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
 	return resp, nil
 }
 
@@ -247,10 +328,61 @@ func (c *Client) ScanSeries(ctx context.Context, libraryID, seriesID int) error 
 	return err
 }
 
-// ScanLibrary triggers a full library scan (used by the import pipeline).
-func (c *Client) ScanLibrary(ctx context.Context) error {
-	_, err := c.do(ctx, http.MethodPost, "/api/Library/scan", nil, nil)
+// Libraries lists every library on the server, with the folders each one
+// watches as Kavita sees them (container-side paths, which callers translate
+// with Config.ResolveKavitaPath).
+//
+// Folders is only populated for an admin account: Kavita answers a non-admin
+// with a LiteLibraryDto that carries id/name/type and nothing else. A caller
+// that needs to match folders should treat an all-empty Folders as "librarr's
+// Kavita user is not an admin" rather than "no library matches".
+func (c *Client) Libraries(ctx context.Context) ([]Library, error) {
+	var libs []Library
+	if _, err := c.do(ctx, http.MethodGet, "/api/Library/libraries", nil, &libs); err != nil {
+		return nil, err
+	}
+	return libs, nil
+}
+
+// ScanLibrary triggers a scan of one Kavita library.
+//
+// libraryId goes in the *query string*, not in a JSON body: Kavita's
+// LibraryController binds it from the query, and a POST /api/Library/scan with
+// no libraryId is rejected outright. That missing parameter is what made every
+// scan librarr requested fail. force=true makes Kavita ignore its
+// skip-unchanged optimisations and re-read files as if it were a first scan.
+func (c *Client) ScanLibrary(ctx context.Context, libraryID int, force bool) error {
+	q := url.Values{}
+	q.Set("libraryId", strconv.Itoa(libraryID))
+	q.Set("force", strconv.FormatBool(force))
+	_, err := c.do(ctx, http.MethodPost, "/api/Library/scan?"+q.Encode(), nil, nil)
 	return err
+}
+
+// ScanAllLibraries scans every library on the server, listing them first and
+// issuing one targeted scan per library.
+//
+// Kavita does expose POST /api/Library/scan-all, but librarr goes through the
+// list + per-library scan path on purpose: it is the exact request shape known
+// to work against the Kavita versions librarr targets, and a failure names the
+// library that failed instead of being a single opaque error. Scanning
+// continues across failures so one broken library cannot mask the others; the
+// first error is returned once every library has been attempted.
+func (c *Client) ScanAllLibraries(ctx context.Context, force bool) error {
+	libs, err := c.Libraries(ctx)
+	if err != nil {
+		return err
+	}
+	if len(libs) == 0 {
+		return fmt.Errorf("kavita reported no libraries to scan")
+	}
+	var firstErr error
+	for _, lib := range libs {
+		if err := c.ScanLibrary(ctx, lib.ID, force); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("scanning library %q (id %d): %w", lib.Name, lib.ID, err)
+		}
+	}
+	return firstErr
 }
 
 // SeriesForID looks up a single series' library id (needed for a targeted scan

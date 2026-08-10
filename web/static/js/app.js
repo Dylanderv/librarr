@@ -286,7 +286,7 @@ const I18N = {
     // Browse — manual Kavita scan (never triggered by an edit)
     browse_scan: 'Scan in Kavita',
     browse_scan_running: 'Scanning…',
-    browse_scan_done: 'Kavita scan requested (all libraries)',
+    browse_scan_done: 'Kavita scan requested for this library',
     browse_scan_failed: 'Failed to request the Kavita scan',
     // Browse — folder rename with preview
     browse_rename: 'Rename',
@@ -3943,8 +3943,13 @@ async function scanBrowseKavita() {
   btn.disabled = true;
   label.textContent = t('browse_scan_running');
   try {
-    await postFiles('/api/files/kavita/scan', { root: state.browseRootId });
-    showToast(t('browse_scan_done'), 'success');
+    const res = await postFiles('/api/files/kavita/scan', { root: state.browseRootId });
+    // Name the libraries actually scanned: the scan is targeted now, and the
+    // user needs to see that it hit the one they expected.
+    const names = (res && res.libraries || []).map((l) => l.name).filter(Boolean);
+    showToast(names.length
+      ? `${t('browse_scan_done')} — ${names.join(', ')}`
+      : t('browse_scan_done'), 'success');
   } catch (err) {
     showToast(err.message || t('browse_scan_failed'), 'error');
   } finally {
@@ -3971,7 +3976,14 @@ async function postFiles(path, body) {
   } catch (err) {
     data = null;
   }
-  if (!resp.ok) throw new Error((data && data.error) || `API error: ${resp.status}`);
+  if (!resp.ok) {
+    // `detail` is the server's user-facing explanation (e.g. what Kavita
+    // answered, or which paths failed to match). It is vetted server-side to
+    // exclude URLs and credentials, so it is safe to show as-is, and showing
+    // it is the whole point: "kavita scan failed" alone is undiagnosable.
+    const base = (data && data.error) || `API error: ${resp.status}`;
+    throw new Error(data && data.detail ? `${base}: ${data.detail}` : base);
+  }
   return data;
 }
 
