@@ -208,8 +208,8 @@ knob to turn — not a `chown`.
 Kavita names a series after its folder and files whenever the embedded metadata
 does not take precedence, so a torrent-derived name
 (`Inio.Asano.Anthology.OS.Asano.FR.-TONER-Paprika+`) keeps showing in the library
-however good the ComicInfo is. The bulk metadata editor can therefore realign the
-layout with the **Series** field it writes:
+however good the ComicInfo is. The Browse tab's rename panel can therefore
+realign the layout with the **Series** field it writes:
 
 - **Folder only** — `Old.Torrent.Name-GROUP/` → `Bakemono Recchan/`
 - **Folder and files** — also renames each file to `<Series> Vol.NN.cbz`, the
@@ -242,9 +242,27 @@ Kavita's libraries, translates each one's folders back to local paths through
 never matched by name, so a mapping that does not line up fails with an explicit
 error naming the paths compared instead of rescanning the wrong library.
 
-For the two tabs to agree, the directories above should overlap the paths Kavita
-serves (`KAVITA_LIBRARY_PATH`, `KAVITA_MANGA_LIBRARY_PATH`, the targets of
+For Browse and Kavita to agree, the directories above should overlap the paths
+Kavita serves (`KAVITA_LIBRARY_PATH`, `KAVITA_MANGA_LIBRARY_PATH`, the targets of
 `KAVITA_PATH_MAP`). When they do not, librarr says so once at startup.
+
+### Library tab
+
+The **Library** tab lists what librarr itself recorded importing — the
+`library_items` rows — across its Ebooks, Audiobooks and Manga sub-tabs, with the
+filter box searching titles, authors, paths and source ids. The Manga sub-tab used
+to mirror Kavita's series list instead; it no longer does, because that made the
+rows librarr actually keys its own decisions on unviewable.
+
+That matters for duplicates. A download is refused with HTTP 409 when a
+`library_items` row already carries the same source id (info hash, MD5 or GUID),
+and removing a torrent from the download client does not remove that row. Such a
+row would otherwise be invisible while silently blocking every retry. Removing an
+entry here deletes only the row, never the file on disk — which is precisely what
+releases the duplicate check.
+
+Browse, by contrast, shows the filesystem. The two answer different questions:
+Library says what librarr thinks it has, Browse says what is actually on disk.
 
 ### Authentication
 
@@ -447,6 +465,10 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 
 ### Library
 
+All three listing endpoints accept `?q=` to filter on title, author, file path or
+source id, and serve librarr's own `library_items` rows (`/api/library` and
+`/api/library/audiobooks` defer to Audiobookshelf when it is configured).
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/library` | List ebooks in library |
@@ -454,6 +476,7 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 | GET | `/api/library/manga` | List manga |
 | DELETE | `/api/library/book/{id}` | Remove ebook |
 | DELETE | `/api/library/audiobook/{id}` | Remove audiobook |
+| DELETE | `/api/library/manga/{id}` | Remove manga |
 | GET | `/api/stats` | Library statistics |
 | GET | `/api/activity` | Recent activity log |
 

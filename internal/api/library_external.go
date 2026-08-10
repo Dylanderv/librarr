@@ -187,88 +187,20 @@ func (s *Server) handleLibraryAudiobooks(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// --- Kavita Library (Manga) ---
+// --- Library (Manga) ---
 
+// handleLibraryManga lists the manga rows of the local library, exactly like the
+// ebooks and audiobooks tabs do.
+//
+// It used to mirror Kavita's series list when Kavita was configured. That made
+// the tab unable to show — and therefore unable to delete — librarr's own
+// library_items rows: the duplicate check in the download path keys on
+// library_items.source_id, so an entry left behind after a torrent was removed
+// blocked any re-download while being invisible everywhere in the UI. The local
+// DB is the only source that can answer "what does librarr think it already
+// has?", so that is what this tab shows. Kavita browsing belongs in Kavita.
 func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.HasKavita() {
-		// Issue #49: same as audiobooks — fall back to local DB so manga
-		// imported via /api/import/files is visible in its own tab
-		// instead of leaking into /api/library.
-		s.serveLocalLibraryByMediaType(w, r, "manga")
-		return
-	}
-
-	page := queryInt(r, "page", 1)
-	query := r.URL.Query().Get("q")
-	ctx := r.Context()
-
-	client := s.kavitaClient()
-
-	publicURL := s.cfg.KavitaPublicURL
-	if publicURL == "" {
-		publicURL = s.cfg.KavitaURL
-	}
-
-	if query != "" {
-		// Use search endpoint.
-		series, err := client.SearchSeries(ctx, query)
-		if err != nil {
-			slog.Error("Kavita search failed", "error", err)
-			writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-				"error": "Failed to search Kavita",
-			})
-			return
-		}
-		items := s.kavitaSeriesToItems(series, publicURL)
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": items,
-			"total": len(items),
-			"page":  page,
-			"pages": 1,
-		})
-		return
-	}
-
-	limit := 100
-	series, total, err := client.AllSeries(ctx, page, limit)
-	if err != nil {
-		slog.Error("Kavita series list failed", "error", err)
-		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"error": "Failed to reach Kavita",
-		})
-		return
-	}
-
-	items := s.kavitaSeriesToItems(series, publicURL)
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": items,
-		"total": total,
-		"page":  page,
-		"pages": int(math.Ceil(float64(total) / float64(limit))),
-	})
-}
-
-func (s *Server) kavitaSeriesToItems(series []kavita.Series, publicURL string) []map[string]interface{} {
-	var items []map[string]interface{}
-	for _, sr := range series {
-		// Use public URL for covers so the browser can reach them
-		coverURL := fmt.Sprintf("%s/api/image/series-cover?seriesId=%d", publicURL, sr.ID)
-		kavitaURL := fmt.Sprintf("%s/library/%d/series/%d", publicURL, sr.LibraryID, sr.ID)
-
-		items = append(items, map[string]interface{}{
-			"id":         sr.ID,
-			"name":       sr.Name,
-			"pages":      sr.Pages,
-			"library":    sr.LibraryName,
-			"cover_url":  coverURL,
-			"kavita_url": kavitaURL,
-		})
-	}
-	if items == nil {
-		items = []map[string]interface{}{}
-	}
-	return items
+	s.serveLocalLibraryByMediaType(w, r, "manga")
 }
 
 // --- Delete library items ---
@@ -320,6 +252,37 @@ func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteAudiobook(w http.ResponseWriter, r *http.Request) {
 	// Same as delete book — handles both integer and UUID IDs.
 	s.handleDeleteBook(w, r)
+}
+
+// handleDeleteManga removes a manga row from librarr's own library. Unlike books
+// and audiobooks there is no external system to mirror the delete to: manga rows
+// only ever come from the local DB, so the id is always an internal one and a
+// non-numeric id is a caller bug rather than a foreign identifier.
+//
+// The file on disk is deliberately left alone. Removing the row is what releases
+// the duplicate check in the download path, which is the whole point of exposing
+// this; deleting media is a separate, destructive concern.
+func (s *Server) handleDeleteManga(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false,
+			"error":   "Invalid library item id",
+		})
+		return
+	}
+	if err := s.db.DeleteItem(id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	username, _ := r.Context().Value(ctxUsername).(string)
+	s.db.LogActivity(username, "library_remove", idStr, fmt.Sprintf("Removed library item %s", idStr))
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
 // --- Wishlist ---

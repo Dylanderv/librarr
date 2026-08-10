@@ -68,13 +68,17 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := s.db.GetItems(mediaType, limit, offset)
+	// The UI's single search box feeds all three library tabs, so honor ?q=
+	// here too — it was previously accepted and silently ignored.
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	items, err := s.db.SearchItems(mediaType, query, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 
-	total, _ := s.db.CountItems(mediaType)
+	total, _ := s.db.CountSearchItems(mediaType, query)
 
 	var jsonItems []map[string]interface{}
 	for _, item := range items {
@@ -92,10 +96,10 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serveLocalLibraryByMediaType is the fallback used by /api/library/audiobooks
-// and /api/library/manga when ABS / Kavita aren't configured. Response shape
-// matches the ABS handler (items/total/page/pages) so the UI's existing
-// pagination code works against both code paths.
+// serveLocalLibraryByMediaType serves /api/library/manga, and /api/library/audiobooks
+// when ABS isn't configured. Response shape matches the ABS handler
+// (items/total/page/pages) so the UI's existing pagination code works against
+// both code paths. An optional ?q= filters on title, author, path or source id.
 func (s *Server) serveLocalLibraryByMediaType(w http.ResponseWriter, r *http.Request, mediaType string) {
 	const pageSize = 100
 	page := queryInt(r, "page", 1)
@@ -103,13 +107,14 @@ func (s *Server) serveLocalLibraryByMediaType(w http.ResponseWriter, r *http.Req
 		page = 1
 	}
 	offset := (page - 1) * pageSize
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
 
-	items, err := s.db.GetItems(mediaType, pageSize, offset)
+	items, err := s.db.SearchItems(mediaType, query, pageSize, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
-	total, _ := s.db.CountItems(mediaType)
+	total, _ := s.db.CountSearchItems(mediaType, query)
 
 	jsonItems := make([]map[string]interface{}, 0, len(items))
 	for _, item := range items {

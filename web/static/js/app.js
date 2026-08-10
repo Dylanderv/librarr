@@ -740,8 +740,6 @@ const state = {
   metaFilePath: null,
   metaFileEditable: false,
   // Bulk metadata selection (manga/Kavita tab only).
-  selectMode: false,
-  selectedSeries: new Map(), // Kavita series id -> name
   config: null,
   downloadPollTimer: null,
   currentUser: null,
@@ -1236,15 +1234,6 @@ function switchLibraryTab(tab) {
   document.querySelectorAll('.lib-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.ltab === tab);
   });
-  // Bulk metadata editing is backed by Kavita series, which only the manga
-  // tab lists. Leaving the tab exits select mode so state can't leak across.
-  const selectToggle = document.getElementById('library-select-toggle');
-  if (tab === 'manga') {
-    selectToggle.classList.remove('hidden');
-  } else {
-    selectToggle.classList.add('hidden');
-    exitSelectMode();
-  }
   loadLibrary();
 }
 
@@ -2446,7 +2435,9 @@ function renderLibraryEbook(item, index) {
     ? `<img src="${escapeHtml(item.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" data-ph-title="${escapeHtml(item.title || '')}" data-ph-idx="${index}">`
     : makePlaceholderHtml(item.title || '?', index);
 
-  const format = item.format || (item.file_path || '').split('.').pop() || '';
+  // Local rows use file_format/file_size; ABS-shaped rows use format/size.
+  const format = item.file_format || item.format || (item.file_path || '').split('.').pop() || '';
+  const size = item.file_size || item.size;
 
   const seriesBadge = item.series ? `<p class="text-xs text-indigo-400 line-clamp-1 mb-1">${escapeHtml(item.series)}</p>` : '';
 
@@ -2461,7 +2452,7 @@ function renderLibraryEbook(item, index) {
         ${seriesBadge}
         <div class="flex items-center gap-2 text-xs text-slate-500">
           ${format ? `<span class="uppercase">${escapeHtml(format)}</span>` : ''}
-          ${item.size ? `<span>${escapeHtml(formatSize(item.size))}</span>` : ''}
+          ${size ? `<span>${escapeHtml(formatSize(size))}</span>` : ''}
         </div>
       </div>
     </div>
@@ -2495,411 +2486,36 @@ function renderLibraryAudiobook(item, index) {
 }
 
 function renderLibraryManga(item, index) {
-  // Kavita rows carry `name`; local-DB fallback rows carry `title` (the torrent
-  // name), or at worst just a file_path — derive a display name from whichever
-  // is present so entries don't all show "Unknown".
-  const displayName = item.name || item.title || baseName(item.file_path) || '';
+  // Rows come from librarr's own library_items. Titles there are the release
+  // name at import time and can be empty, so fall back to the file name rather
+  // than showing "Unknown".
+  const displayName = item.title || baseName(item.file_path) || '';
 
   const coverHtml = item.cover_url
     ? `<img src="${escapeHtml(item.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" data-ph-title="${escapeHtml(displayName)}" data-ph-idx="${index}">`
     : makePlaceholderHtml(displayName || '?', index);
 
-  const selected = state.selectedSeries.has(item.id);
-  const selectClasses = state.selectMode ? 'cursor-pointer' : '';
-  const ring = selected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-slate-800 hover:border-slate-600';
-
-  // In select mode the whole card toggles selection; a checkbox badge shows state.
-  const selectOverlay = state.selectMode
-    ? `<div class="absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold ${selected ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 border border-slate-500 text-transparent'}">&#x2713;</div>`
-    : '';
-  const cardAttrs = state.selectMode
-    ? `data-action="toggleSeriesSelect" data-id="${escapeHtml(String(item.id))}" data-name="${escapeHtml(displayName)}"`
-    : '';
+  // Local rows use file_format/file_size; ABS-shaped rows use format/size.
+  const format = item.file_format || item.format || (item.file_path || '').split('.').pop() || '';
+  const size = item.file_size || item.size;
 
   return `
-    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border relative ${ring} ${selectClasses}" ${cardAttrs}>
-      ${selectOverlay}
+    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 relative group">
       ${coverHtml}
+      <button data-action="deleteLibraryItem" data-id="${escapeHtml(String(item.id || ''))}" data-type="manga" data-title="${escapeHtml(displayName)}"
+        class="absolute top-2 right-2 w-7 h-7 bg-red-600/80 hover:bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Remove from library">&#x2715;</button>
       <div class="p-3">
         <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(displayName || 'Unknown')}</h3>
-        <div class="flex items-center gap-2 text-xs text-slate-500 mb-2">
-          ${item.pages ? `<span>${t('n_pages', {n: item.pages})}</span>` : ''}
-          ${item.library ? `<span>${escapeHtml(item.library)}</span>` : ''}
+        <p class="text-xs text-slate-400 line-clamp-1 mb-1">${escapeHtml(item.author || '')}</p>
+        ${item.series ? `<p class="text-xs text-indigo-400 line-clamp-1 mb-1">${escapeHtml(item.series)}</p>` : ''}
+        <div class="flex items-center gap-2 text-xs text-slate-500">
+          ${format ? `<span class="uppercase">${escapeHtml(format)}</span>` : ''}
+          ${size ? `<span>${escapeHtml(formatSize(size))}</span>` : ''}
         </div>
-        ${!state.selectMode && item.kavita_url ? `<a href="${escapeHtml(item.kavita_url)}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">${t('open_in_kavita')}</a>` : ''}
+        <p class="text-xs text-slate-600 line-clamp-1 mt-1" title="${escapeHtml(item.file_path || '')}">${escapeHtml(item.file_path || '')}</p>
       </div>
     </div>
   `;
-}
-
-// ============================================================
-// BULK METADATA EDITING (Kavita)
-// ============================================================
-
-function toggleSelectMode() {
-  state.selectMode = !state.selectMode;
-  const toggle = document.getElementById('library-select-toggle');
-  toggle.classList.toggle('bg-indigo-600', state.selectMode);
-  toggle.classList.toggle('text-white', state.selectMode);
-  if (!state.selectMode) state.selectedSeries.clear();
-  updateSelectionBar();
-  loadLibrary();
-}
-
-function exitSelectMode() {
-  if (!state.selectMode && state.selectedSeries.size === 0) return;
-  state.selectMode = false;
-  state.selectedSeries.clear();
-  const toggle = document.getElementById('library-select-toggle');
-  toggle.classList.remove('bg-indigo-600', 'text-white');
-  updateSelectionBar();
-}
-
-function toggleSeriesSelect(id, name) {
-  // Kavita series ids are integers; keep the map keyed numerically.
-  const key = Number(id);
-  if (state.selectedSeries.has(key)) {
-    state.selectedSeries.delete(key);
-  } else {
-    state.selectedSeries.set(key, name);
-  }
-  updateSelectionBar();
-  loadLibrary();
-}
-
-function clearSelection() {
-  state.selectedSeries.clear();
-  updateSelectionBar();
-  loadLibrary();
-}
-
-function updateSelectionBar() {
-  const bar = document.getElementById('library-selection-bar');
-  const count = state.selectedSeries.size;
-  document.getElementById('selection-count').textContent = count;
-  if (state.selectMode && count > 0) {
-    bar.classList.remove('hidden');
-    bar.classList.add('flex');
-  } else {
-    bar.classList.add('hidden');
-    bar.classList.remove('flex');
-  }
-}
-
-async function openMetadataModal() {
-  if (state.selectedSeries.size === 0) return;
-  const modal = document.getElementById('metadata-modal');
-  document.getElementById('metadata-modal-count').textContent = state.selectedSeries.size;
-  document.getElementById('metadata-modal-error').classList.add('hidden');
-
-  // Reset all rows.
-  document.querySelectorAll('#metadata-fields .metadata-row').forEach(row => {
-    const cb = row.querySelector('.meta-enable');
-    const val = row.querySelector('.meta-value');
-    cb.checked = false;
-    val.disabled = true;
-    val.value = '';
-  });
-  document.querySelector('input[name="meta-list-mode"][value="set"]').checked = true;
-
-  // Renaming is opt-in per edit: never carry it over from a previous open.
-  document.getElementById('metadata-rename-enable').checked = false;
-  document.getElementById('metadata-rename-options').classList.add('hidden');
-  document.getElementById('metadata-rename-preview').innerHTML = '';
-  document.querySelector('input[name="meta-rename-mode"][value="folder"]').checked = true;
-
-  modal.classList.remove('hidden');
-  modal.classList.add('flex');
-
-  // Online lookup is always available. Every editable field here is
-  // series-level (author, genres, tags…), so applying one AniList result to
-  // all selected series is valid — a multi-selection is the user asserting
-  // these belong to the same series. The query prefills from the first
-  // selected series' name; the user can edit it before searching.
-  const online = document.getElementById('metadata-online');
-  online.classList.remove('hidden');
-  document.getElementById('metadata-online-results').innerHTML = '';
-  document.getElementById('metadata-online-status').classList.add('hidden');
-  const [, firstName] = [...state.selectedSeries.entries()][0];
-  document.getElementById('metadata-online-query').value = firstName || '';
-  if (state.selectedSeries.size === 1) prefillMetadataField('series', firstName || '');
-
-  // Pre-fill existing values from Kavita only for a single-series edit — these
-  // are read per-series and can't be meaningfully merged across a selection.
-  if (state.selectedSeries.size === 1) {
-    const [id] = state.selectedSeries.keys();
-    try {
-      const md = await apiJson(`/api/library/manga/series/${id}/metadata`);
-      prefillMetadataField('authors', (md.authors || []).join(', '));
-      prefillMetadataField('genres', (md.genres || []).join(', '));
-      prefillMetadataField('tags', (md.tags || []).join(', '));
-      prefillMetadataField('publisher', (md.publishers || [])[0] || '');
-      prefillMetadataField('language', md.language || '');
-      prefillMetadataField('summary', md.summary || '');
-    } catch (err) {
-      // Non-fatal: the form just stays blank if prefill fails.
-    }
-  }
-}
-
-function prefillMetadataField(field, value) {
-  if (!value) return;
-  const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
-  if (row) row.querySelector('.meta-value').value = value;
-}
-
-// Holds the last online-search candidates so a click can prefill from the full
-// object (rather than re-encoding it into the DOM).
-let metadataCandidates = [];
-
-async function searchOnlineMetadata() {
-  const q = document.getElementById('metadata-online-query').value.trim();
-  const type = document.getElementById('metadata-online-source').value;
-  const statusEl = document.getElementById('metadata-online-status');
-  const resultsEl = document.getElementById('metadata-online-results');
-  if (!q) return;
-
-  statusEl.textContent = t('searching') || 'Searching…';
-  statusEl.classList.remove('hidden');
-  resultsEl.innerHTML = '';
-  metadataCandidates = [];
-
-  try {
-    const data = await apiJson(`/api/metadata/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`);
-    metadataCandidates = data.candidates || [];
-    if (metadataCandidates.length === 0) {
-      statusEl.textContent = t('no_matches') || 'No matches found.';
-      return;
-    }
-    statusEl.classList.add('hidden');
-    resultsEl.innerHTML = metadataCandidates.map((c, i) => renderMetadataCandidate(c, i)).join('');
-  } catch (err) {
-    if (err.message !== 'Unauthorized') {
-      statusEl.textContent = err.message || t('search_failed') || 'Search failed.';
-    }
-  }
-}
-
-function renderMetadataCandidate(c, index) {
-  const cover = c.cover_url
-    ? `<img src="${escapeHtml(c.cover_url)}" alt="" class="h-14 w-10 object-cover rounded flex-shrink-0" loading="lazy">`
-    : '<div class="h-14 w-10 rounded bg-slate-700 flex-shrink-0"></div>';
-  const meta = [c.year, c.authors && c.authors.join(', ')].filter(Boolean).join(' · ');
-  const link = c.site_url
-    ? `<a href="${escapeHtml(c.site_url)}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 text-xs">↗</a>`
-    : '';
-  return `
-    <div class="metadata-candidate flex items-start gap-3 p-2 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors" data-action="applyMetadataCandidate" data-idx="${index}">
-      ${cover}
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-1.5"><span class="text-sm font-medium text-white line-clamp-1">${escapeHtml(c.title || 'Unknown')}</span>${link}</div>
-        <div class="text-xs text-slate-400 line-clamp-1">${escapeHtml(meta)}</div>
-        <div class="text-xs text-slate-500 line-clamp-2 mt-0.5">${escapeHtml(c.summary || '')}</div>
-      </div>
-    </div>`;
-}
-
-// applyMetadataCandidate prefills the editable rows from a chosen candidate and
-// enables each field it populated so the user can review before saving.
-function applyMetadataCandidate(index) {
-  const c = metadataCandidates[index];
-  if (!c) return;
-  const apply = (field, value) => {
-    if (!value) return;
-    const row = document.querySelector(`#metadata-fields .metadata-row[data-field="${field}"]`);
-    if (!row) return;
-    row.querySelector('.meta-value').value = value;
-    const cb = row.querySelector('.meta-enable');
-    cb.checked = true;
-    row.querySelector('.meta-value').disabled = false;
-  };
-  apply('series', c.title || '');
-  apply('authors', (c.authors || []).join(', '));
-  apply('genres', (c.genres || []).join(', '));
-  apply('tags', (c.tags || []).join(', '));
-  apply('publisher', c.publisher || '');
-  apply('language', c.language || '');
-  apply('summary', c.summary || '');
-
-  // Highlight the chosen candidate.
-  document.querySelectorAll('.metadata-candidate').forEach(el => {
-    el.classList.toggle('border-indigo-500', +el.dataset.idx === index);
-    el.classList.toggle('bg-indigo-500/10', +el.dataset.idx === index);
-  });
-}
-
-// --- Rename preview -------------------------------------------------------
-//
-// The preview calls the same planner the save path uses, so what is shown is
-// what will run. It is recomputed whenever the inputs that feed it change.
-
-let renamePreviewSeq = 0;
-
-function selectedRenameMode() {
-  if (!document.getElementById('metadata-rename-enable').checked) return 'none';
-  const el = document.querySelector('input[name="meta-rename-mode"]:checked');
-  return el ? el.value : 'folder';
-}
-
-function seriesFieldValue() {
-  const row = document.querySelector('#metadata-fields .metadata-row[data-field="series"]');
-  if (!row || !row.querySelector('.meta-enable').checked) return '';
-  return row.querySelector('.meta-value').value.trim();
-}
-
-async function refreshRenamePreview() {
-  const box = document.getElementById('metadata-rename-preview');
-  const mode = selectedRenameMode();
-  if (mode === 'none') {
-    box.innerHTML = '';
-    return;
-  }
-
-  const name = seriesFieldValue();
-  if (!name) {
-    box.innerHTML = `<span class="text-amber-400">${escapeHtml(t('rename_needs_series'))}</span>`;
-    return;
-  }
-
-  // Late responses from a superseded request must not overwrite a newer preview.
-  const seq = ++renamePreviewSeq;
-  box.innerHTML = escapeHtml(t('rename_previewing'));
-
-  try {
-    // api() rather than apiJson() so a 4xx body's {error} reaches the user.
-    const resp = await api('/api/library/metadata/rename-preview', {
-      method: 'POST',
-      body: JSON.stringify({
-        series_ids: [...state.selectedSeries.keys()],
-        series_name: name,
-        mode,
-      }),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (seq !== renamePreviewSeq) return;
-    if (!resp.ok) throw new Error(data.error || `API error: ${resp.status}`);
-    box.innerHTML = renderRenamePreview(data.plans || []);
-  } catch (err) {
-    if (seq !== renamePreviewSeq) return;
-    if (err.message !== 'Unauthorized') {
-      box.innerHTML = `<span class="text-red-400">${escapeHtml(err.message || t('rename_preview_failed'))}</span>`;
-    }
-  }
-}
-
-function renderRenamePreview(plans) {
-  const parts = [];
-  let changes = 0;
-
-  for (const p of plans) {
-    const lines = [];
-    if (p.folder_from && p.folder_to) {
-      changes++;
-      lines.push(renameLine(baseName(p.folder_from) + '/', baseName(p.folder_to) + '/'));
-    }
-    for (const f of p.files || []) {
-      changes++;
-      lines.push(renameLine(baseName(f.from), baseName(f.to)));
-    }
-    for (const skip of p.skipped || []) {
-      lines.push(`<div class="text-slate-500">${escapeHtml(skip)}</div>`);
-    }
-    for (const warn of p.warnings || []) {
-      lines.push(`<div class="text-amber-400">${escapeHtml(warn)}</div>`);
-    }
-    for (const e of p.errors || []) {
-      lines.push(`<div class="text-red-400">${escapeHtml(e)}</div>`);
-    }
-    if (lines.length === 0) continue;
-    if (plans.length > 1) {
-      lines.unshift(`<div class="text-slate-300 mt-1">${escapeHtml(p.series_name || `#${p.series_id}`)}</div>`);
-    }
-    parts.push(lines.join(''));
-  }
-
-  if (parts.length === 0) return escapeHtml(t('rename_no_changes'));
-  if (changes === 0) return parts.join('');
-  return parts.join('');
-}
-
-function renameLine(from, to) {
-  return `<div class="flex items-start gap-1 flex-wrap">
-    <span class="text-slate-500 line-through">${escapeHtml(from)}</span>
-    <span class="text-slate-600">→</span>
-    <span class="text-emerald-400">${escapeHtml(to)}</span>
-  </div>`;
-}
-
-function closeMetadataModal() {
-  const modal = document.getElementById('metadata-modal');
-  modal.classList.add('hidden');
-  modal.classList.remove('flex');
-}
-
-async function saveMetadata() {
-  const ids = [...state.selectedSeries.keys()];
-  if (ids.length === 0) return;
-
-  const listFields = new Set(['authors', 'genres', 'tags']);
-  const fields = {};
-  let anyEnabled = false;
-  document.querySelectorAll('#metadata-fields .metadata-row').forEach(row => {
-    if (!row.querySelector('.meta-enable').checked) return;
-    anyEnabled = true;
-    const key = row.dataset.field;
-    const raw = row.querySelector('.meta-value').value;
-    if (listFields.has(key)) {
-      fields[key] = raw.split(',').map(s => s.trim()).filter(Boolean);
-    } else {
-      fields[key] = raw;
-    }
-  });
-
-  const errEl = document.getElementById('metadata-modal-error');
-  if (!anyEnabled) {
-    errEl.textContent = t('metadata_no_fields') || 'Enable at least one field to write.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  const mode = document.querySelector('input[name="meta-list-mode"]:checked').value;
-  const btn = document.getElementById('metadata-save-btn');
-  btn.disabled = true;
-  btn.textContent = t('writing') || 'Writing…';
-
-  try {
-    // Use api() directly so a 4xx body's {error} message reaches the user
-    // instead of apiJson's generic "API error: 400".
-    const resp = await api('/api/library/metadata/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ series_ids: ids, mode, fields, rename: selectedRenameMode() }),
-    });
-    const res = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      throw new Error(res.error || `API error: ${resp.status}`);
-    }
-    const fileErrors = (res.results || []).reduce((n, r) => n + (r.errors ? r.errors.length : 0), 0);
-    if (fileErrors > 0) {
-      showToast(
-        `Wrote ${res.files_written} file(s) across ${res.series_count} series, ${fileErrors} issue(s)`,
-        'warning'
-      );
-    } else {
-      const renamed = res.paths_renamed ? `, renamed ${res.paths_renamed} path(s)` : '';
-      showToast(`Wrote metadata to ${res.files_written} file(s) across ${res.series_count} series${renamed}`, 'success');
-    }
-    closeMetadataModal();
-    exitSelectMode();
-    loadLibrary();
-  } catch (err) {
-    if (err.message !== 'Unauthorized') {
-      errEl.textContent = err.message || 'Failed to write metadata';
-      errEl.classList.remove('hidden');
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = t('save_write_files') || 'Save & write files';
-  }
 }
 
 async function deleteLibraryItem(id, type, title) {
@@ -4967,14 +4583,6 @@ const CLICK_ACTIONS = {
   retryDownload: el => retryDownload(el.dataset.jobId),
   deleteLibraryItem: el => deleteLibraryItem(el.dataset.id, el.dataset.type, el.dataset.title),
   goLibraryPage: el => goLibraryPage(+el.dataset.page),
-  toggleSelectMode: () => toggleSelectMode(),
-  toggleSeriesSelect: el => toggleSeriesSelect(el.dataset.id, el.dataset.name),
-  clearSelection: () => clearSelection(),
-  openMetadataModal: () => openMetadataModal(),
-  closeMetadataModal: () => closeMetadataModal(),
-  saveMetadata: () => saveMetadata(),
-  searchOnlineMetadata: () => searchOnlineMetadata(),
-  applyMetadataCandidate: el => applyMetadataCandidate(+el.dataset.idx),
   searchWishlistItem: el => searchWishlistItem(el.dataset.title, el.dataset.mediaType),
   deleteWishlistItem: el => deleteWishlistItem(+el.dataset.id),
   deleteUser: el => deleteUser(+el.dataset.id, el.dataset.username),
@@ -5014,38 +4622,11 @@ document.addEventListener('change', e => {
     if (fn) fn(el, e);
     return;
   }
-  // Bulk-metadata row toggles: enabling the checkbox unlocks the value input.
-  if (e.target.classList && e.target.classList.contains('meta-enable')) {
-    const row = e.target.closest('.metadata-row');
-    if (row) {
-      const val = row.querySelector('.meta-value');
-      val.disabled = !e.target.checked;
-      if (e.target.checked) val.focus();
-      // Toggling Series changes what a rename would produce.
-      if (row.dataset.field === 'series') refreshRenamePreview();
-    }
-  }
-  // Rename controls: the preview must follow every input that feeds it.
-  if (e.target.id === 'metadata-rename-enable') {
-    document.getElementById('metadata-rename-options')
-      .classList.toggle('hidden', !e.target.checked);
-    refreshRenamePreview();
-  }
-  if (e.target.name === 'meta-rename-mode') refreshRenamePreview();
 });
 
-// Editing the series name re-previews, debounced so typing doesn't hammer the
-// endpoint (each call hits Kavita once per selected series).
-let renamePreviewTimer = null;
-document.addEventListener('input', e => {
-  const row = e.target.closest && e.target.closest('.metadata-row[data-field="series"]');
-  if (!row) return;
-  clearTimeout(renamePreviewTimer);
-  renamePreviewTimer = setTimeout(refreshRenamePreview, 400);
-});
-
-// Same idea for the Browse rename panel. Only the rows are re-rendered, so the
-// series field keeps its focus and caret while the preview refreshes under it.
+// Typing the series name in the Browse rename panel re-previews, debounced so it
+// doesn't hammer the endpoint. Only the rows are re-rendered, so the series field
+// keeps its focus and caret while the preview refreshes under it.
 let browseRenameTimer = null;
 document.addEventListener('input', e => {
   if (e.target.id !== 'browse-rename-series') return;

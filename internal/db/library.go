@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/models"
@@ -56,21 +57,57 @@ func (d *DB) FindByTitle(title string) ([]models.LibraryItem, error) {
 	return scanLibraryItems(rows)
 }
 
+// libraryFilter builds the WHERE clause shared by the list and count queries.
+// The query term matches the fields a user can plausibly search on, source_id
+// included: it is what the duplicate check in the download path keys on, so
+// being able to look an item up by its info hash or MD5 is what makes a stale
+// entry findable at all.
+func libraryFilter(mediaType, query string) (string, []interface{}) {
+	var clauses []string
+	var args []interface{}
+
+	if mediaType != "" {
+		clauses = append(clauses, "media_type = ?")
+		args = append(args, mediaType)
+	}
+	if q := strings.TrimSpace(query); q != "" {
+		like := "%" + escapeLikePattern(q) + "%"
+		clauses = append(clauses,
+			`(title LIKE ? ESCAPE '\' OR author LIKE ? ESCAPE '\' OR file_path LIKE ? ESCAPE '\' OR source_id LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like, like)
+	}
+
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// escapeLikePattern neutralises the LIKE wildcards so a literal "%" or "_" in
+// a title doesn't turn into a match-anything.
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	return strings.ReplaceAll(s, "_", `\_`)
+}
+
 // GetItems returns a paginated list of library items, newest first.
 func (d *DB) GetItems(mediaType string, limit, offset int) ([]models.LibraryItem, error) {
+	return d.SearchItems(mediaType, "", limit, offset)
+}
+
+// SearchItems returns a paginated list of library items, newest first, matching
+// an optional free-text query on title, author, file path or source id.
+func (d *DB) SearchItems(mediaType, query string, limit, offset int) ([]models.LibraryItem, error) {
+	where, args := libraryFilter(mediaType, query)
+	args = append(args, limit, offset)
+
 	var rows *sql.Rows
 	var err error
-	if mediaType != "" {
-		rows, err = d.db.Query(
-			"SELECT * FROM library_items WHERE media_type = ? ORDER BY added_at DESC LIMIT ? OFFSET ?",
-			mediaType, limit, offset,
-		)
-	} else {
-		rows, err = d.db.Query(
-			"SELECT * FROM library_items ORDER BY added_at DESC LIMIT ? OFFSET ?",
-			limit, offset,
-		)
-	}
+	rows, err = d.db.Query(
+		"SELECT * FROM library_items"+where+" ORDER BY added_at DESC LIMIT ? OFFSET ?",
+		args...,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +117,14 @@ func (d *DB) GetItems(mediaType string, limit, offset int) ([]models.LibraryItem
 
 // CountItems counts library items, optionally filtered by media type.
 func (d *DB) CountItems(mediaType string) (int, error) {
+	return d.CountSearchItems(mediaType, "")
+}
+
+// CountSearchItems counts the items SearchItems would page through.
+func (d *DB) CountSearchItems(mediaType, query string) (int, error) {
+	where, args := libraryFilter(mediaType, query)
 	var count int
-	var err error
-	if mediaType != "" {
-		err = d.db.QueryRow("SELECT COUNT(*) FROM library_items WHERE media_type = ?", mediaType).Scan(&count)
-	} else {
-		err = d.db.QueryRow("SELECT COUNT(*) FROM library_items").Scan(&count)
-	}
+	err := d.db.QueryRow("SELECT COUNT(*) FROM library_items"+where, args...).Scan(&count)
 	return count, err
 }
 func (d *DB) GetStats() (map[string]interface{}, error) {
