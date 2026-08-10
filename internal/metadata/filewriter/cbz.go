@@ -2,6 +2,7 @@ package filewriter
 
 import (
 	"encoding/xml"
+	"errors"
 	"strings"
 )
 
@@ -96,6 +97,14 @@ func applyCBZ(path string, f Fields) error {
 	}
 	doc := append([]byte(xml.Header), out...)
 	doc = append(doc, '\n')
+
+	// Patch in place when the archive allows it: rebuilding a multi-hundred-MB
+	// CBZ to inject a kilobyte of XML costs minutes over network storage.
+	if err := patchZipEntry(path, comicInfoName, doc); err == nil {
+		return nil
+	} else if !errors.Is(err, errNotPatchable) {
+		return err
+	}
 
 	return rewriteZip(path, map[string][]byte{comicInfoName: doc}, map[string][]byte{comicInfoName: doc})
 }

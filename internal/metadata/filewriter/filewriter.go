@@ -3,13 +3,15 @@
 // metadata travels with the file and is the single source of truth. After
 // writing, callers trigger a Kavita rescan to pick the changes up.
 //
-// All writes are atomic: the archive is rebuilt into a temp file in the same
-// directory and renamed over the original, so a failure never leaves a
-// corrupted book behind.
+// A failure never leaves a corrupted book behind. CBZs are patched in place by
+// appending to the archive, which leaves every existing byte untouched (see
+// zippatch.go); everything else is rebuilt into a temp file in the same
+// directory and renamed over the original.
 package filewriter
 
 import (
 	"archive/zip"
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -95,7 +97,11 @@ func rewriteZip(path string, replace map[string][]byte, add map[string][]byte) e
 		}
 	}()
 
-	zw := zip.NewWriter(tmp)
+	// Buffer the temp file: io.Copy's 32 KB chunks turn into 32 KB writes on a
+	// bare *os.File, which is a poor fit for network storage negotiating much
+	// larger transfer sizes.
+	bw := bufio.NewWriterSize(tmp, 4<<20)
+	zw := zip.NewWriter(bw)
 	present := make(map[string]bool, len(zr.File))
 
 	for _, f := range zr.File {
@@ -103,29 +109,37 @@ func rewriteZip(path string, replace map[string][]byte, add map[string][]byte) e
 		// Preserve the original header (name, method, modtime) so structural
 		// requirements like EPUB's stored mimetype entry survive the rewrite.
 		hdr := f.FileHeader
-		w, err := zw.CreateHeader(&hdr)
-		if err != nil {
-			zw.Close()
-			return fmt.Errorf("write header %s: %w", f.Name, err)
-		}
+
 		if data, ok := replace[f.Name]; ok {
+			w, err := zw.CreateHeader(&hdr)
+			if err != nil {
+				zw.Close()
+				return fmt.Errorf("write header %s: %w", f.Name, err)
+			}
 			if _, err := w.Write(data); err != nil {
 				zw.Close()
 				return fmt.Errorf("write %s: %w", f.Name, err)
 			}
 			continue
 		}
-		rc, err := f.Open()
+
+		// Entries we're not changing are copied compressed-as-is: decoding and
+		// re-encoding them would burn CPU to produce the same bytes.
+		w, err := zw.CreateRaw(&hdr)
+		if err != nil {
+			zw.Close()
+			return fmt.Errorf("write header %s: %w", f.Name, err)
+		}
+		// OpenRaw yields a plain io.Reader — there is nothing to close.
+		rc, err := f.OpenRaw()
 		if err != nil {
 			zw.Close()
 			return fmt.Errorf("open entry %s: %w", f.Name, err)
 		}
 		if _, err := io.Copy(w, rc); err != nil {
-			rc.Close()
 			zw.Close()
 			return fmt.Errorf("copy %s: %w", f.Name, err)
 		}
-		rc.Close()
 	}
 
 	for name, data := range add {
@@ -145,6 +159,9 @@ func rewriteZip(path string, replace map[string][]byte, add map[string][]byte) e
 
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("finalize zip: %w", err)
+	}
+	if err := bw.Flush(); err != nil {
+		return fmt.Errorf("flush temp: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("sync temp: %w", err)
