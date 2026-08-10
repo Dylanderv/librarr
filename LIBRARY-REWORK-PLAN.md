@@ -57,7 +57,7 @@ Indépendant du reste du chantier.
 
 ## Étape 1 — Racines et résolution de chemin (socle backend)
 
-**Statut : à faire**
+**Statut : terminé**
 
 - Nouveau fichier `internal/api/files_roots.go` :
   - `libraryRoots(cfg)` → `[{id, label, path}]` construit depuis `MangaDir`,
