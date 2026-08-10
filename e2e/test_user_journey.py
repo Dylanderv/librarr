@@ -243,6 +243,87 @@ def test_browse_lists_roots_and_navigates_into_a_folder(ui):
     assert page.locator("#browse-error").is_hidden()
 
 
+def _open_browse_meta_panel(page):
+    """Navigate to the seeded folder and open its metadata panel."""
+    page.click('[data-action="switchTab"][data-arg="browse"]')
+    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
+    page.locator('#browse-list [data-action="browseOpen"]',
+                 has_text=BROWSE_FIXTURE_DIR).first.click()
+    page.wait_for_timeout(500)
+    page.click("#browse-meta-btn")
+    page.wait_for_selector("#browse-online")
+
+
+def test_browse_online_lookup_prefills_and_arms_fields(ui):
+    """Online lookup in the Browse folder panel. The upstream call is stubbed at
+    the browser, so the test never reaches AniList or Open Library."""
+    page = ui["page"]
+    _open_browse_meta_panel(page)
+
+    # The library we are in routes the source (the e2e root is EBOOK_DIR), and
+    # the query starts from the folder name.
+    assert page.input_value("#browse-online-source") == "book"
+    assert page.input_value("#browse-online-query") == BROWSE_FIXTURE_DIR
+
+    page.route(
+        "**/api/metadata/search*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"candidates": [{
+                "source": "openlibrary",
+                "title": "Stubbed Series",
+                "summary": "A stubbed summary.",
+                "authors": ["Stub Author"],
+                "genres": ["Stub Genre"],
+                "year": "1999",
+                "language": "en",
+            }]}),
+        ),
+    )
+    page.click("#browse-online-btn")
+    page.wait_for_selector(".browse-online-candidate")
+    results = page.inner_text("#browse-online-results")
+    assert "Stubbed Series" in results
+    # Year is shown to help identify the result, never written.
+    assert "1999" in results
+
+    page.click(".browse-online-candidate")
+    page.wait_for_timeout(200)
+    assert page.input_value("#browse-meta-series") == "Stubbed Series"
+    assert page.is_checked("#browse-meta-en-series")
+    assert page.input_value("#browse-meta-authors") == "Stub Author"
+    assert page.is_checked("#browse-meta-en-authors")
+    assert page.input_value("#browse-meta-genres") == "Stub Genre"
+    # A field the source did not return stays empty and unarmed.
+    assert page.input_value("#browse-meta-publisher") == ""
+    assert not page.is_checked("#browse-meta-en-publisher")
+    # Nothing is written without a preview: Apply is still locked.
+    assert page.locator("#browse-meta-apply").is_disabled()
+    page.unroute("**/api/metadata/search*")
+
+
+def test_browse_online_lookup_reports_an_unconfigured_source(ui):
+    """A 503 means the source is not configured — its own message, not a
+    generic failure."""
+    page = ui["page"]
+    _open_browse_meta_panel(page)
+    page.route(
+        "**/api/metadata/search*",
+        lambda route: route.fulfill(
+            status=503,
+            content_type="application/json",
+            body=json.dumps({"error": "Open Library client not available"}),
+        ),
+    )
+    page.click("#browse-online-btn")
+    page.wait_for_timeout(500)
+    status = page.inner_text("#browse-online-status")
+    assert "not configured" in status
+    assert page.locator(".browse-online-candidate").count() == 0
+    page.unroute("**/api/metadata/search*")
+
+
 # ── Cover fallback via capture-phase error delegation ───────────────────────
 
 def test_broken_cover_falls_back_to_placeholder(ui):

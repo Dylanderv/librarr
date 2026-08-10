@@ -452,6 +452,28 @@
 
         <p class="px-4 pt-3 text-xs text-slate-500" data-i18n="browse_meta_folder_hint">Ticked fields are written to every file in this folder, replacing what is already there.</p>
 
+        <!-- Online lookup. Folder panel only: AniList and Open Library describe a
+             work, not one volume, so there is nothing useful to fetch for a single
+             file. Picking a result fills the fields below and ticks them; nothing
+             is written until Preview then Apply. -->
+        <div id="browse-online" class="mx-4 mt-3 space-y-2 rounded-lg border border-slate-800 bg-slate-800/40 p-3">
+          <p class="text-xs text-slate-400" data-i18n="browse_online_help">Fetch metadata from an online database to pre-fill the fields below, then preview before applying.</p>
+          <div class="flex items-center gap-2">
+            <select id="browse-online-source" data-action-change="browseOnlineSource" class="bg-slate-800 border border-slate-600 rounded-lg px-2 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+              <option value="manga" data-i18n="source_manga">Manga (AniList)</option>
+              <option value="book" data-i18n="source_book">Book (Open Library)</option>
+            </select>
+            <input type="text" id="browse-online-query" class="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+            <button id="browse-online-btn" data-action="searchBrowseOnline" class="px-3 py-2 text-sm font-semibold rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_online_search">Search online</button>
+          </div>
+          <!-- Year and cover are identification aids only: filewriter.Fields has no
+               year, and librarr does not write covers. Saying so beats a field that
+               silently never lands. -->
+          <p class="text-xs text-slate-600" data-i18n="browse_online_note">Year and cover help you pick the right result; librarr does not write them into your files.</p>
+          <div id="browse-online-status" class="text-xs text-slate-500 hidden"></div>
+          <div id="browse-online-results" class="space-y-2 max-h-48 overflow-y-auto"></div>
+        </div>
+
         <div id="browse-meta-fields" class="px-4 py-3 grid gap-2"></div>
 
         <div class="px-4 pb-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
@@ -919,6 +941,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260810d"></script>
+<script src="/static/js/app.js?v=20260810e"></script>
 </body>
 </html>

@@ -232,3 +232,56 @@ Ajouts :
 - `browse` ajouté à la boucle de `test_all_tabs_switch`.
 
 Aucun code applicatif touché (donc pas de bump de `?v=`).
+
+---
+
+## Étape 7 — Recherche de métadonnées en ligne dans Browse
+
+**Statut : terminé**
+
+L'ancien onglet Library sait pré-remplir les métadonnées depuis une source en
+ligne ; Browse ne le savait pas. Écart comblé.
+
+**Aucun changement backend.** `GET /api/metadata/search?type=manga|book&q=…`
+(`internal/api/metadata_search.go`) est déjà générique et sans couplage Kavita,
+et déjà décrit dans `openapi.json`. Le front le consomme tel quel.
+
+Décisions actées avec l'utilisateur avant écriture :
+
+- **Source routée par la racine courante, surchargeable** : `manga` → AniList,
+  `ebooks`/`audiobooks` → Open Library. Le sélecteur reste manipulable — un
+  light novel rangé dans `ebooks` est légitimement une fiche AniList.
+- **Choisir un candidat remplit les champs reçus et coche leur case d'armement.**
+  Un champ rempli mais non armé ne serait pas envoyé : remplir sans cocher
+  reviendrait à ne rien faire. Les champs absents de la réponse restent vides et
+  désarmés. Le pré-remplissage se fait en JS, donc sans événement `change` : la
+  sélection invalide explicitement l'aperçu (`resetBrowseMetaPreview`).
+- **Panneau dossier uniquement.** AniList et Open Library décrivent une œuvre,
+  pas un volume : le panneau fichier n'a rien à y gagner.
+- **Rien n'est écrit sans le parcours existant** Aperçu → Appliquer.
+
+Correspondance candidat → champs : `title` → **Série** (c'est une série, et le
+serveur refuse `title` sur une cible dossier) ; `summary`, `publisher`,
+`language`, `authors`, `genres`, `tags` vers leurs homonymes.
+
+**`year` et `cover_url` sont affichés mais jamais écrits** : `filewriter.Fields`
+n'a pas de champ année et le filewriter ne gère pas les couvertures. Ils servent
+à identifier le bon candidat, et une mention sous le formulaire le dit — un
+champ montré qui n'atterrit nulle part se lit sinon comme une promesse.
+`site_url` est rendu en lien `target="_blank" rel="noopener noreferrer"` pour
+départager deux homonymes ; cliquer le lien ne sélectionne pas le candidat.
+
+Cas dégradés distingués par code HTTP plutôt que fondus en une « erreur » :
+503 = source non configurée sur ce serveur, 502 = source injoignable, autre =
+échec de la recherche, zéro candidat = message propre. Requête vide : aucun
+appel. Le bouton est désarmé pendant la requête et porte l'état « Recherche… ».
+
+Détails d'implémentation : les lignes de candidats sont construites en API DOM
+(titres et résumés viennent d'un tiers et peuvent contenir des guillemets, que
+`escapeHtml` n'échappe pas), et `cover_url`/`site_url` sont filtrés sur le
+schéma `http(s)` avant rendu.
+
+Tests e2e : deux tests de fumée ajoutés (source routée + requête pré-remplie,
+sélection d'un candidat qui remplit et arme, 503 correctement libellé). L'appel
+amont est stubbé au niveau du navigateur (`page.route`) : **aucun accès réseau
+externe**. Suite complète 13/13.

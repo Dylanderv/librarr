@@ -375,6 +375,19 @@ const I18N = {
     browse_meta_notice_truncated: 'Only the first {count} files were inspected — this preview is partial',
     browse_meta_notice_unsupported_skipped: '{count} file(s) cannot hold metadata and are left alone',
     browse_meta_notice_already_up_to_date: '{count} file(s) already hold these values',
+    // Browse — online metadata lookup (folder panel only)
+    browse_online_help: 'Fetch metadata from an online database to pre-fill the fields below, then preview before applying.',
+    browse_online_search: 'Search online',
+    browse_online_searching: 'Searching…',
+    browse_online_note: 'Year and cover help you pick the right result; librarr does not write them into your files.',
+    browse_online_none: 'No match found for this query.',
+    // Each degraded case gets its own answer: an unconfigured source and a
+    // source that failed call for different actions.
+    browse_online_unavailable: 'This source is not configured on this server.',
+    browse_online_upstream: 'The online source did not answer. Try again in a moment.',
+    browse_online_failed: 'The search could not be run.',
+    browse_online_picked: 'Fields filled from this result — review the ticked ones, then preview.',
+    browse_online_unknown_title: 'Untitled',
   },
   ru: {
     // Navigation
@@ -4313,6 +4326,14 @@ function openBrowseMeta() {
   });
   document.getElementById('browse-meta-recursive').checked = false;
   document.getElementById('browse-meta-append').checked = false;
+
+  // Online lookup: source routed from the library we are browsing, query
+  // seeded with the folder name and editable before searching.
+  document.getElementById('browse-online-source').value =
+    browseOnlineDefaultType(state.browseRootId);
+  document.getElementById('browse-online-query').value = browseBaseName(state.browsePath);
+  resetBrowseOnline();
+
   document.getElementById('browse-meta-panel').classList.remove('hidden');
   resetBrowseMetaPreview();
 }
@@ -4323,6 +4344,7 @@ function closeBrowseMeta() {
   const panel = document.getElementById('browse-meta-panel');
   if (panel) panel.classList.add('hidden');
   hideBrowseMetaError();
+  resetBrowseOnline();
 }
 
 function browseMetaEnabled(field) {
@@ -4479,6 +4501,205 @@ function showBrowseMetaError(message) {
 function hideBrowseMetaError() {
   const el = document.getElementById('browse-meta-error');
   if (el) el.classList.add('hidden');
+}
+
+// --- Online lookup (folder panel only) -----------------------------------
+//
+// /api/metadata/search is source-agnostic and knows nothing about Kavita, so
+// Browse reuses it as-is. The source is routed from the library we are in
+// (manga → AniList, ebooks/audiobooks → Open Library) and stays overridable:
+// a light novel filed under ebooks is legitimately an AniList entry.
+//
+// Picking a result fills the fields it carries *and* ticks them, because a
+// value nobody armed would silently not be written. Fields the source did not
+// return are left blank and unticked — the panel's own contract. Nothing
+// reaches disk without Preview then Apply.
+//
+// Rows are built with DOM APIs: titles and summaries come from a third party
+// and may contain quotes, which escapeHtml() does not escape.
+
+// Last candidate list, kept whole so a click prefills from the object rather
+// than from what the DOM managed to carry.
+let browseOnlineCandidates = [];
+
+// Which source a library defaults to. Anything that is not manga is a book.
+function browseOnlineDefaultType(rootId) {
+  return rootId === 'manga' ? 'manga' : 'book';
+}
+
+// Only http(s) links are rendered: a cover_url or site_url is remote data, and
+// a javascript: URL in an href would execute on click.
+function browseOnlineSafeURL(raw) {
+  if (!raw) return '';
+  try {
+    const u = new URL(raw, window.location.origin);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+  } catch (err) {
+    return '';
+  }
+}
+
+function resetBrowseOnline() {
+  const results = document.getElementById('browse-online-results');
+  if (results) results.innerHTML = '';
+  const status = document.getElementById('browse-online-status');
+  if (status) {
+    status.textContent = '';
+    status.classList.add('hidden');
+  }
+  browseOnlineCandidates = [];
+}
+
+function showBrowseOnlineStatus(message) {
+  const status = document.getElementById('browse-online-status');
+  status.textContent = message;
+  status.classList.remove('hidden');
+}
+
+async function searchBrowseOnline() {
+  const input = document.getElementById('browse-online-query');
+  const q = input ? input.value.trim() : '';
+  // An empty query would only earn a 400; don't spend a round trip on it.
+  if (!q) return;
+  const type = document.getElementById('browse-online-source').value;
+  const btn = document.getElementById('browse-online-btn');
+  const label = btn.textContent;
+
+  resetBrowseOnline();
+  showBrowseOnlineStatus(t('browse_online_searching'));
+  btn.disabled = true;
+  btn.textContent = t('browse_online_searching');
+
+  let data;
+  try {
+    // api() rather than apiJson(): the status code is the whole message here.
+    // 503 means the source is not configured, 502 that it failed to answer —
+    // two different problems, and "error" would name neither.
+    const resp = await api(`/api/metadata/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`);
+    if (resp.status === 503) {
+      showBrowseOnlineStatus(t('browse_online_unavailable'));
+      return;
+    }
+    if (resp.status === 502) {
+      showBrowseOnlineStatus(t('browse_online_upstream'));
+      return;
+    }
+    if (!resp.ok) {
+      showBrowseOnlineStatus(t('browse_online_failed'));
+      return;
+    }
+    data = await resp.json();
+  } catch (err) {
+    // Unauthorized already opened the login modal; anything else is the network.
+    if (err.message !== 'Unauthorized') showBrowseOnlineStatus(t('browse_online_failed'));
+    return;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+
+  browseOnlineCandidates = data.candidates || [];
+  if (browseOnlineCandidates.length === 0) {
+    showBrowseOnlineStatus(t('browse_online_none'));
+    return;
+  }
+  document.getElementById('browse-online-status').classList.add('hidden');
+  const results = document.getElementById('browse-online-results');
+  browseOnlineCandidates.forEach((c, i) => results.appendChild(browseOnlineRow(c, i)));
+}
+
+function browseOnlineRow(c, index) {
+  const row = document.createElement('div');
+  row.className = 'browse-online-candidate flex items-start gap-3 p-2 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition-colors';
+  row.dataset.action = 'pickBrowseOnline';
+  row.dataset.idx = String(index);
+
+  const cover = browseOnlineSafeURL(c.cover_url);
+  if (cover) {
+    const img = document.createElement('img');
+    img.src = cover;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.className = 'h-14 w-10 object-cover rounded flex-shrink-0';
+    row.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'h-14 w-10 rounded bg-slate-700 flex-shrink-0';
+    row.appendChild(ph);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'min-w-0 flex-1';
+
+  const head = document.createElement('div');
+  head.className = 'flex items-center gap-1.5';
+  const title = document.createElement('span');
+  title.className = 'text-sm font-medium text-white line-clamp-1';
+  title.textContent = c.title || t('browse_online_unknown_title');
+  head.appendChild(title);
+  const site = browseOnlineSafeURL(c.site_url);
+  if (site) {
+    // Two same-named candidates are told apart by opening the source page.
+    const link = document.createElement('a');
+    link.href = site;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'text-indigo-400 hover:text-indigo-300 text-xs';
+    link.textContent = '↗';
+    head.appendChild(link);
+  }
+  body.appendChild(head);
+
+  const sub = document.createElement('div');
+  sub.className = 'text-xs text-slate-400 line-clamp-1';
+  sub.textContent = [c.year, (c.authors || []).join(', ')].filter(Boolean).join(' · ');
+  body.appendChild(sub);
+
+  const summary = document.createElement('div');
+  summary.className = 'text-xs text-slate-500 line-clamp-2 mt-0.5';
+  summary.textContent = c.summary || '';
+  body.appendChild(summary);
+
+  row.appendChild(body);
+  return row;
+}
+
+// pickBrowseOnline fills and arms the fields the candidate carries. `title` is
+// the *series* here: a folder holds a work, and the server refuses a `title`
+// on a folder target anyway. `year` and `cover_url` are deliberately dropped —
+// filewriter has nowhere to put them.
+function pickBrowseOnline(index) {
+  const c = browseOnlineCandidates[index];
+  if (!c) return;
+
+  const fill = (field, value) => {
+    if (!value) return;
+    const input = document.getElementById(`browse-meta-${field}`);
+    const cb = document.getElementById(`browse-meta-en-${field}`);
+    if (!input || !cb) return;
+    cb.checked = true;
+    input.disabled = false;
+    input.value = value;
+  };
+
+  fill('series', c.title || '');
+  fill('summary', c.summary || '');
+  fill('publisher', c.publisher || '');
+  fill('language', c.language || '');
+  fill('authors', (c.authors || []).join(', '));
+  fill('genres', (c.genres || []).join(', '));
+  fill('tags', (c.tags || []).join(', '));
+
+  // Setting values in code fires no change event, so drop the preview here:
+  // it was measured against the form as it was a moment ago.
+  resetBrowseMetaPreview();
+
+  document.querySelectorAll('.browse-online-candidate').forEach(el => {
+    const chosen = +el.dataset.idx === index;
+    el.classList.toggle('border-indigo-500', chosen);
+    el.classList.toggle('bg-indigo-500/10', chosen);
+  });
+  showBrowseOnlineStatus(t('browse_online_picked'));
 }
 
 // --- Single-file panel ---------------------------------------------------
@@ -4697,6 +4918,13 @@ const CLICK_ACTIONS = {
   previewBrowseMeta: () => previewBrowseMeta(),
   applyBrowseMeta: () => applyBrowseMeta(),
   openBrowseFileMeta: el => openBrowseFileMeta(el.dataset.path),
+  searchBrowseOnline: () => searchBrowseOnline(),
+  // The candidate's source link sits inside the clickable row: opening it is
+  // not choosing the candidate.
+  pickBrowseOnline: (el, e) => {
+    if (e.target.closest && e.target.closest('a')) return;
+    pickBrowseOnline(+el.dataset.idx);
+  },
   closeBrowseFileMeta: () => closeBrowseFileMeta(),
   applyBrowseFileMeta: () => applyBrowseFileMeta(),
   setSortMode: el => setSortMode(el.dataset.arg),
@@ -4757,6 +4985,9 @@ const CHANGE_ACTIONS = {
   browseRenameMode: () => refreshBrowseRenamePreview(),
   browseRenameVolume: el => browseRenameVolume(el),
   browseMetaToggle: el => browseMetaToggle(el),
+  // Candidates belong to the source that produced them: switching source
+  // leaves a list that no longer matches the selector above it.
+  browseOnlineSource: () => resetBrowseOnline(),
   // Any edit to the folder form drops the preview, so Apply always follows a
   // fresh look at what would change.
   browseMetaDirty: () => resetBrowseMetaPreview(),
