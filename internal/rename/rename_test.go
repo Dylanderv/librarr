@@ -183,6 +183,83 @@ func TestBuildPlanNoopWhenAlreadyNamed(t *testing.T) {
 	}
 }
 
+func vol(n int) *int { return &n }
+
+func TestBuildPlanForUsesSuppliedVolume(t *testing.T) {
+	// The trailing-number fallback reads "Serie Truc 42" as volume 42; the user
+	// says it is volume 3 and must win.
+	p := BuildPlanFor("Series", []FileInput{
+		{Path: "/books/manga/Old/Serie Truc 42.cbz", Volume: vol(3)},
+		{Path: "/books/manga/Old/Old v2.cbz"},
+	}, ModeFolderAndFiles)
+
+	if len(p.Files) != 2 {
+		t.Fatalf("planned %d renames, want 2: %+v", len(p.Files), p.Files)
+	}
+	if got := filepath.Base(p.Files[0].To); got != "Series Vol.03.cbz" {
+		t.Errorf("supplied volume ignored: %q", got)
+	}
+	if got := filepath.Base(p.Files[1].To); got != "Series Vol.02.cbz" {
+		t.Errorf("detected volume lost: %q", got)
+	}
+}
+
+func TestBuildPlanForRescuesUndetectableFile(t *testing.T) {
+	// Detection finds nothing here, so BuildPlan would skip the file; a supplied
+	// volume is exactly what makes it renamable.
+	files := []FileInput{
+		{Path: "/books/manga/Old/Old v1.cbz"},
+		{Path: "/books/manga/Old/bonus chapter.cbz", Volume: vol(2)},
+	}
+	p := BuildPlanFor("Series", files, ModeFolderAndFiles)
+
+	if len(p.Skipped) != 0 {
+		t.Errorf("Skipped = %v, want none", p.Skipped)
+	}
+	if len(p.Files) != 2 {
+		t.Fatalf("planned %d renames, want 2: %+v", len(p.Files), p.Files)
+	}
+	if got := filepath.Base(p.Files[1].To); got != "Series Vol.02.cbz" {
+		t.Errorf("Files[1].To = %q", got)
+	}
+}
+
+func TestBuildPlanForNilVolumeMatchesBuildPlan(t *testing.T) {
+	paths := []string{
+		"/books/manga/Old/Old v1.cbz",
+		"/books/manga/Old/bonus chapter.cbz",
+	}
+	inputs := make([]FileInput, len(paths))
+	for i, p := range paths {
+		inputs[i] = FileInput{Path: p, Volume: nil}
+	}
+
+	want := BuildPlan("Series", paths, ModeFolderAndFiles)
+	got := BuildPlanFor("Series", inputs, ModeFolderAndFiles)
+
+	if got.FolderFrom != want.FolderFrom || got.FolderTo != want.FolderTo ||
+		len(got.Files) != len(want.Files) || len(got.Skipped) != len(want.Skipped) {
+		t.Fatalf("nil volumes changed the plan:\n got %+v\nwant %+v", got, want)
+	}
+	for i := range got.Files {
+		if got.Files[i] != want.Files[i] {
+			t.Errorf("Files[%d] = %+v, want %+v", i, got.Files[i], want.Files[i])
+		}
+	}
+}
+
+// A non-positive volume is not a volume: it falls back to detection rather than
+// producing "Vol.00".
+func TestBuildPlanForIgnoresNonPositiveVolume(t *testing.T) {
+	p := BuildPlanFor("Series", []FileInput{
+		{Path: "/books/manga/Old/Old v1.cbz", Volume: vol(0)},
+	}, ModeFolderAndFiles)
+
+	if len(p.Files) != 1 || filepath.Base(p.Files[0].To) != "Series Vol.01.cbz" {
+		t.Errorf("unexpected plan: %+v", p)
+	}
+}
+
 func TestParseMode(t *testing.T) {
 	for _, in := range []string{"none", "folder", "folder_and_files", ""} {
 		if _, err := ParseMode(in); err != nil {

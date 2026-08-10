@@ -93,7 +93,7 @@ Critère de suppression de l'ancien onglet Library : quand Browse couvre lister 
 
 ## Étape 3 — Renommage dossier avec aperçu
 
-**Statut : à faire**
+**Statut : terminé**
 
 - `internal/rename` : ajouter `BuildPlanFor(series string, files []FileInput, mode)`
   avec `FileInput{Path string; Volume *int}` pour porter les volumes saisis à la

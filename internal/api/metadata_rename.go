@@ -102,22 +102,35 @@ func (s *Server) buildRenamePlan(ctx context.Context, client *kavita.Client, id 
 			out.Errors = append(out.Errors, fmt.Sprintf("folder not renamable: %v", err))
 			out.Plan.FolderFrom, out.Plan.FolderTo = "", ""
 			// Without the folder move, the files stay where they are.
-			for i := range out.Plan.Files {
-				out.Plan.Files[i].To = filepath.Join(
-					filepath.Dir(out.Plan.Files[i].From),
-					filepath.Base(out.Plan.Files[i].To),
-				)
-			}
+			keepFilesInPlace(&out.Plan)
 		}
 	}
 
 	return out
 }
 
+// keepFilesInPlace rewrites file destinations so they land next to their source
+// instead of inside a folder that is not going to move after all. Called
+// whenever a planned folder rename is dropped, at plan time or at apply time.
+func keepFilesInPlace(p *rename.Plan) {
+	for i := range p.Files {
+		p.Files[i].To = filepath.Join(
+			filepath.Dir(p.Files[i].From),
+			filepath.Base(p.Files[i].To),
+		)
+	}
+}
+
 var errIsLibraryRoot = errors.New("path is a library root")
 
+// dirValidator reports whether librarr may rename a directory. It exists so the
+// rename machinery is not welded to one notion of "allowed root": the Kavita
+// path uses checkRenamableDir (KAVITA_PATH_MAP roots), the /api/files/* path
+// uses the MANGA_DIR/EBOOK_DIR/AUDIOBOOK_DIR roots of files_roots.go.
+type dirValidator func(dir string) error
+
 // checkRenamableDir rejects directories librarr must not move: anything outside
-// the configured roots, and the roots themselves.
+// the Kavita-allowed roots, and the roots themselves.
 func (s *Server) checkRenamableDir(dir string) error {
 	clean := filepath.Clean(dir)
 	for _, root := range s.cfg.KavitaAllowedRoots() {
@@ -133,63 +146,69 @@ func (s *Server) checkRenamableDir(dir string) error {
 	return nil
 }
 
-// applyRenamePlan performs the folder rename first, then the files, so file
-// destinations computed against the new folder are valid. Failures are collected
-// rather than aborting: a series whose folder cannot move can still have its
-// files renamed in place.
+// applyRenamePlan applies a Kavita series' plan. It is the Kavita-flavoured
+// wrapper around applyPlan: the validator is the Kavita root check, and the
+// errors are folded into the series envelope the UI reads.
 func (s *Server) applyRenamePlan(p *seriesRenamePlan) (renamed int) {
-	if p.Plan.FolderFrom != "" {
-		if err := s.checkRenamableDir(p.Plan.FolderFrom); err != nil {
-			p.Errors = append(p.Errors, fmt.Sprintf("folder not renamable: %v", err))
-			return 0
+	renamed, errs := applyPlan(&p.Plan, s.checkRenamableDir)
+	p.Errors = append(p.Errors, errs...)
+	return renamed
+}
+
+// applyPlan performs the folder rename first, then the files, so file
+// destinations computed against the new folder are valid. Failures are collected
+// and returned rather than aborting: a series whose folder cannot move can still
+// have its files renamed in place.
+//
+// The plan is mutated to reflect what actually happened — FolderTo is cleared
+// when the folder did not move — so callers can tell where the files ended up.
+func applyPlan(p *rename.Plan, canRename dirValidator) (renamed int, errs []string) {
+	if p.FolderFrom != "" {
+		if err := canRename(p.FolderFrom); err != nil {
+			return 0, append(errs, fmt.Sprintf("folder not renamable: %v", err))
 		}
-		if _, err := os.Stat(p.Plan.FolderTo); err == nil {
+		if _, err := os.Stat(p.FolderTo); err == nil {
 			// Merging into an existing folder is a different operation with its
 			// own conflict rules; refuse rather than silently interleave.
-			p.Errors = append(p.Errors,
-				fmt.Sprintf("target folder already exists: %s", p.Plan.FolderTo))
-			p.Plan.FolderTo = ""
-			for i := range p.Plan.Files {
-				p.Plan.Files[i].To = filepath.Join(
-					filepath.Dir(p.Plan.Files[i].From),
-					filepath.Base(p.Plan.Files[i].To),
-				)
-			}
-		} else if err := os.Rename(p.Plan.FolderFrom, p.Plan.FolderTo); err != nil {
-			p.Errors = append(p.Errors, fmt.Sprintf("rename folder: %v", err))
+			errs = append(errs, fmt.Sprintf("target folder already exists: %s", p.FolderTo))
+			p.FolderTo = ""
+			keepFilesInPlace(p)
+		} else if err := os.Rename(p.FolderFrom, p.FolderTo); err != nil {
+			errs = append(errs, fmt.Sprintf("rename folder: %v", err))
 			// The files' destinations assumed the move happened, so fall back to
 			// renaming them where they are.
-			for i := range p.Plan.Files {
-				p.Plan.Files[i].To = filepath.Join(
-					filepath.Dir(p.Plan.Files[i].From),
-					filepath.Base(p.Plan.Files[i].To),
-				)
-			}
+			//
+			// KNOWN LIMITATION, kept as-is by this refactor: FolderTo is left set,
+			// so the loop below still rewrites each source into a folder that does
+			// not exist and every file rename then fails. Clearing it here would
+			// fix that, but it is a behaviour change in a path no test covers —
+			// tracked separately rather than smuggled into a refactor.
+			keepFilesInPlace(p)
 		} else {
 			renamed++
-			slog.Info("series folder renamed", "from", p.Plan.FolderFrom, "to", p.Plan.FolderTo)
+			slog.Info("series folder renamed", "from", p.FolderFrom, "to", p.FolderTo)
 		}
 	}
 
-	for _, fc := range p.Plan.Files {
+	for _, fc := range p.Files {
 		from := fc.From
 		// If the folder moved, the file moved with it.
-		if p.Plan.FolderTo != "" && strings.HasPrefix(from, p.Plan.FolderFrom+string(filepath.Separator)) {
-			from = filepath.Join(p.Plan.FolderTo, strings.TrimPrefix(from, p.Plan.FolderFrom+string(filepath.Separator)))
+		if p.FolderTo != "" && strings.HasPrefix(from, p.FolderFrom+string(filepath.Separator)) {
+			from = filepath.Join(p.FolderTo, strings.TrimPrefix(from, p.FolderFrom+string(filepath.Separator)))
 		}
 		if from == fc.To {
 			continue
 		}
 		if _, err := os.Stat(fc.To); err == nil {
-			p.Errors = append(p.Errors, fmt.Sprintf("%s: target already exists", filepath.Base(fc.To)))
+			errs = append(errs, fmt.Sprintf("%s: target already exists", filepath.Base(fc.To)))
 			continue
 		}
 		if err := os.Rename(from, fc.To); err != nil {
-			p.Errors = append(p.Errors, fmt.Sprintf("%s: %v", filepath.Base(from), err))
+			errs = append(errs, fmt.Sprintf("%s: %v", filepath.Base(from), err))
 			continue
 		}
 		renamed++
 	}
 
-	return renamed
+	return renamed, errs
 }

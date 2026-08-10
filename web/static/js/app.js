@@ -283,6 +283,39 @@ const I18N = {
     browse_kind_cbr: 'CBR',
     browse_kind_audio: 'Audio',
     browse_kind_other: 'File',
+    // Browse — folder rename with preview
+    browse_rename: 'Rename',
+    browse_rename_title: 'Rename folder',
+    browse_rename_close: 'Close',
+    browse_rename_series: 'Series name',
+    browse_rename_mode: 'Scope',
+    browse_rename_mode_folder: 'Folder only',
+    browse_rename_mode_folder_files: 'Folder and files',
+    browse_rename_col_current: 'Current name',
+    browse_rename_col_volume: 'Volume',
+    browse_rename_col_target: 'New name',
+    browse_rename_apply: 'Apply',
+    browse_rename_applying: 'Applying…',
+    browse_rename_folder_same: 'The folder name is already correct',
+    browse_rename_folder_to: 'Folder: {from} → {to}',
+    browse_rename_empty: 'This folder has no files',
+    browse_rename_preview_failed: 'Failed to preview the rename',
+    browse_rename_failed: 'Failed to apply the rename',
+    browse_rename_done: '{count} item(s) renamed',
+    browse_rename_nothing: 'Nothing to rename',
+    browse_rename_summary: '{count} file(s) will be renamed',
+    // Why a file is left alone — never a guess, always a stated reason.
+    browse_rename_status_unchanged: 'Already named correctly',
+    browse_rename_status_no_volume: 'No volume number — enter one to include it',
+    browse_rename_status_collision: 'Another file already takes this name',
+    browse_rename_status_folder_only: 'Not renamed in this scope',
+    browse_rename_volume_placeholder: '—',
+    // Single-file rename
+    browse_rename_file: 'Rename this file',
+    browse_rename_file_save: 'Save',
+    browse_rename_file_cancel: 'Cancel',
+    browse_rename_file_done: 'File renamed',
+    browse_rename_file_failed: 'Failed to rename this file',
   },
   ru: {
     // Navigation
@@ -620,6 +653,12 @@ const state = {
   browseRoots: [],
   browseRootId: null,
   browsePath: null,
+  browseIsRoot: true,
+  // Rename panel: the folder it was opened on, and the volumes the user typed
+  // (file name -> number). Kept out of the DOM so a re-render never loses them.
+  renamePath: null,
+  renameVolumes: {},
+  renamePreview: null,
   // Bulk metadata selection (manga/Kavita tab only).
   selectMode: false,
   selectedSeries: new Map(), // Kavita series id -> name
@@ -3545,7 +3584,8 @@ async function loadStats() {
 
 const BROWSE_FOLDER_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
 const BROWSE_FILE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>';
-const BROWSE_UP_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>';
+const BROWSE_PENCIL_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
+const BROWSE_UP_ICON ='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>';
 
 // Kinds this build knows how to label; anything else falls back to "other".
 const BROWSE_KINDS = new Set(['cbz', 'epub', 'pdf', 'cbr', 'audio', 'other']);
@@ -3611,6 +3651,11 @@ async function openBrowsePath(path) {
 
   state.browseRootId = data.root;
   state.browsePath = data.path;
+  state.browseIsRoot = !!data.is_root;
+  // Leaving the folder invalidates the plan that was previewed on it.
+  if (state.renamePath && state.renamePath !== data.path) closeBrowseRename();
+  // A library root is never renamable, so the button has nothing to offer there.
+  document.getElementById('browse-rename-btn').classList.toggle('hidden', state.browseIsRoot);
   renderBrowseRoots();
   renderBrowseBreadcrumb(data);
   renderBrowseEntries(data);
@@ -3662,6 +3707,8 @@ function browseCrumb(label, path, isCurrent) {
 }
 
 function clearBrowseListing() {
+  closeBrowseRename();
+  document.getElementById('browse-rename-btn').classList.add('hidden');
   document.getElementById('browse-breadcrumb').innerHTML = '';
   document.getElementById('browse-list').innerHTML = '';
   document.getElementById('browse-empty').classList.add('hidden');
@@ -3696,6 +3743,11 @@ function browseRow(entry, targetPath, isParent) {
     row.dataset.action = 'browseOpen';
     row.dataset.path = targetPath;
   }
+  if (!isParent && !entry.is_dir) {
+    // Anchors the inline rename editor to this row.
+    row.dataset.filePath = targetPath;
+    row.dataset.fileName = entry.name;
+  }
 
   const icon = document.createElement('span');
   icon.className = 'shrink-0 ' + (entry.is_dir ? 'text-amber-400/80' : 'text-slate-500');
@@ -3703,7 +3755,7 @@ function browseRow(entry, targetPath, isParent) {
   row.appendChild(icon);
 
   const name = document.createElement('span');
-  name.className = 'flex-1 min-w-0 truncate text-sm ' + (entry.is_dir ? 'text-slate-100' : 'text-slate-300');
+  name.className = 'browse-row-name flex-1 min-w-0 truncate text-sm ' + (entry.is_dir ? 'text-slate-100' : 'text-slate-300');
   name.textContent = isParent ? t('browse_parent') : entry.name;
   row.appendChild(name);
 
@@ -3712,6 +3764,7 @@ function browseRow(entry, targetPath, isParent) {
   const meta = document.createElement('span');
   meta.className = 'shrink-0 flex items-center gap-3 text-xs text-slate-500';
   if (!entry.is_dir) {
+    meta.appendChild(browseRenameFileButton());
     meta.appendChild(browseKindBadge(entry));
     const size = document.createElement('span');
     size.className = 'hidden sm:inline tabular-nums';
@@ -3725,6 +3778,18 @@ function browseRow(entry, targetPath, isParent) {
   row.appendChild(meta);
 
   return row;
+}
+
+// Per-file rename trigger: free-form naming for the one file, next to the
+// folder-wide plan the Rename panel offers.
+function browseRenameFileButton() {
+  const btn = document.createElement('button');
+  btn.className = 'text-slate-500 hover:text-indigo-300 transition-colors';
+  btn.dataset.action = 'startBrowseFileRename';
+  btn.title = t('browse_rename_file');
+  btn.setAttribute('aria-label', t('browse_rename_file'));
+  btn.innerHTML = BROWSE_PENCIL_ICON;
+  return btn;
 }
 
 function browseKindBadge(entry) {
@@ -3754,6 +3819,266 @@ function showBrowseError(message) {
 
 function hideBrowseError() {
   document.getElementById('browse-error').classList.add('hidden');
+}
+
+// ============================================================
+// BROWSE — RENAME (folder with preview, and single files)
+// ============================================================
+// Nothing is ever applied implicitly: the panel previews, the user reads, and
+// only the Apply button writes. Every input that feeds the plan (series name,
+// scope, per-file volume) re-previews, so what is on screen is always what the
+// server would do — the plan is recomputed server-side on apply anyway.
+
+// postFiles POSTs JSON and surfaces the server's error message, which the
+// generic apiJson swallows in favour of the status code.
+async function postFiles(path, body) {
+  const resp = await api(path, { method: 'POST', body: JSON.stringify(body) });
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch (err) {
+    data = null;
+  }
+  if (!resp.ok) throw new Error((data && data.error) || `API error: ${resp.status}`);
+  return data;
+}
+
+function browseBaseName(path) {
+  const parts = String(path || '').split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function openBrowseRename() {
+  if (!state.browsePath || state.browseIsRoot) return;
+  state.renamePath = state.browsePath;
+  state.renameVolumes = {};
+  state.renamePreview = null;
+  // Decision 5: the folder's own name is the starting point, and it is editable.
+  document.getElementById('browse-rename-series').value = browseBaseName(state.browsePath);
+  document.getElementById('browse-rename-mode').value = 'folder_and_files';
+  document.getElementById('browse-rename-panel').classList.remove('hidden');
+  refreshBrowseRenamePreview();
+}
+
+function closeBrowseRename() {
+  state.renamePath = null;
+  state.renamePreview = null;
+  state.renameVolumes = {};
+  document.getElementById('browse-rename-panel').classList.add('hidden');
+  hideBrowseRenameError();
+}
+
+async function refreshBrowseRenamePreview() {
+  if (!state.renamePath) return;
+  hideBrowseRenameError();
+  let data;
+  try {
+    data = await postFiles('/api/files/rename/preview', browseRenamePayload());
+  } catch (err) {
+    state.renamePreview = null;
+    showBrowseRenameError(err.message || t('browse_rename_preview_failed'));
+    document.getElementById('browse-rename-apply').disabled = true;
+    return;
+  }
+  state.renamePreview = data;
+  renderBrowseRenamePreview(data);
+}
+
+function browseRenamePayload() {
+  return {
+    path: state.renamePath,
+    series_name: document.getElementById('browse-rename-series').value,
+    mode: document.getElementById('browse-rename-mode').value,
+    volumes: state.renameVolumes,
+  };
+}
+
+function renderBrowseRenamePreview(data) {
+  const folder = document.getElementById('browse-rename-folder');
+  folder.textContent = data.folder_to
+    ? t('browse_rename_folder_to', {
+      from: browseBaseName(data.folder_from),
+      to: browseBaseName(data.folder_to),
+    })
+    : t('browse_rename_folder_same');
+
+  const warn = document.getElementById('browse-rename-warnings');
+  const warnings = data.warnings || [];
+  warn.textContent = warnings.join(' · ');
+  warn.classList.toggle('hidden', warnings.length === 0);
+
+  const body = document.getElementById('browse-rename-rows');
+  body.innerHTML = '';
+  const files = data.files || [];
+  files.forEach(row => body.appendChild(browseRenameRow(row)));
+  if (files.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.className = 'px-4 py-3 text-sm text-slate-500';
+    td.textContent = t('browse_rename_empty');
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+
+  const planned = files.filter(f => f.status === 'rename').length;
+  const total = planned + (data.folder_to ? 1 : 0);
+  document.getElementById('browse-rename-summary').textContent =
+    total === 0 ? t('browse_rename_nothing') : t('browse_rename_summary', { count: planned });
+  document.getElementById('browse-rename-apply').disabled = total === 0;
+}
+
+function browseRenameRow(row) {
+  const tr = document.createElement('tr');
+
+  const current = document.createElement('td');
+  current.className = 'px-4 py-2 align-middle';
+  const name = document.createElement('div');
+  name.className = 'text-slate-300 break-all';
+  name.textContent = row.name;
+  current.appendChild(name);
+  tr.appendChild(current);
+
+  // The detected volume is pre-filled and editable: detection both misses
+  // volumes and invents them, so the user must be able to correct it. An empty
+  // field means "leave this file alone" (decision 6).
+  const volCell = document.createElement('td');
+  volCell.className = 'px-4 py-2 align-middle';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.className = 'w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500';
+  input.value = row.volume ? String(row.volume) : '';
+  input.placeholder = t('browse_rename_volume_placeholder');
+  input.dataset.actionChange = 'browseRenameVolume';
+  input.dataset.name = row.name;
+  volCell.appendChild(input);
+  tr.appendChild(volCell);
+
+  const target = document.createElement('td');
+  target.className = 'px-4 py-2 align-middle';
+  if (row.status === 'rename') {
+    const to = document.createElement('div');
+    to.className = 'text-emerald-300 break-all';
+    to.textContent = row.target;
+    target.appendChild(to);
+  } else {
+    const why = document.createElement('div');
+    why.className = 'text-xs text-slate-500';
+    why.textContent = t(`browse_rename_status_${row.status}`);
+    target.appendChild(why);
+  }
+  tr.appendChild(target);
+
+  return tr;
+}
+
+async function applyBrowseRename() {
+  if (!state.renamePath) return;
+  const btn = document.getElementById('browse-rename-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_rename_applying');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/rename/apply', browseRenamePayload());
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseRenameError(err.message || t('browse_rename_failed'));
+    return;
+  }
+  btn.textContent = label;
+
+  if (data.errors && data.errors.length) {
+    showBrowseRenameError(data.errors.join(' · '));
+  }
+  showToast(t('browse_rename_done', { count: data.renamed || 0 }),
+    data.errors && data.errors.length ? 'error' : 'success');
+
+  closeBrowseRename();
+  // The folder may have moved: re-open where it actually is now.
+  await openBrowsePath(data.path || state.browsePath);
+}
+
+function browseRenameVolume(el) {
+  const raw = el.value.trim();
+  const n = parseInt(raw, 10);
+  if (raw === '' || !(n > 0)) {
+    delete state.renameVolumes[el.dataset.name];
+  } else {
+    state.renameVolumes[el.dataset.name] = n;
+  }
+  refreshBrowseRenamePreview();
+}
+
+// --- Single file rename -------------------------------------------------
+// An inline editor inside the listing row, so renaming one file needs no modal
+// and no plan. The extension is not shown: the server always keeps the original
+// one, and offering to edit it would suggest otherwise.
+function startBrowseFileRename(el) {
+  const row = el.closest('[data-file-path]');
+  if (!row || row.querySelector('.browse-rename-inline')) return;
+  const path = row.dataset.filePath;
+  const fullName = row.dataset.fileName || browseBaseName(path);
+  const dot = fullName.lastIndexOf('.');
+  const stem = dot > 0 ? fullName.slice(0, dot) : fullName;
+
+  const editor = document.createElement('div');
+  editor.className = 'browse-rename-inline flex items-center gap-2 flex-1 min-w-0';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = stem;
+  input.className = 'flex-1 min-w-0 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500';
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commitBrowseFileRename(path, input.value);
+    if (e.key === 'Escape') openBrowsePath(state.browsePath);
+  });
+
+  const save = document.createElement('button');
+  save.className = 'px-2 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded';
+  save.textContent = t('browse_rename_file_save');
+  save.dataset.action = 'commitBrowseFileRename';
+  save.dataset.path = path;
+
+  const cancel = document.createElement('button');
+  cancel.className = 'px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded';
+  cancel.textContent = t('browse_rename_file_cancel');
+  cancel.dataset.action = 'cancelBrowseFileRename';
+
+  editor.appendChild(input);
+  editor.appendChild(save);
+  editor.appendChild(cancel);
+
+  // Replace the name cell for the duration of the edit.
+  const nameEl = row.querySelector('.browse-row-name');
+  if (nameEl) nameEl.classList.add('hidden');
+  row.insertBefore(editor, nameEl ? nameEl.nextSibling : null);
+  input.focus();
+  input.select();
+}
+
+async function commitBrowseFileRename(path, newName) {
+  try {
+    await postFiles('/api/files/rename/file', { path, new_name: newName });
+  } catch (err) {
+    showToast(err.message || t('browse_rename_file_failed'), 'error');
+    return;
+  }
+  showToast(t('browse_rename_file_done'), 'success');
+  await openBrowsePath(state.browsePath);
+}
+
+function showBrowseRenameError(message) {
+  const el = document.getElementById('browse-rename-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function hideBrowseRenameError() {
+  document.getElementById('browse-rename-error').classList.add('hidden');
 }
 
 // ============================================================
@@ -3831,6 +4156,17 @@ const CLICK_ACTIONS = {
   switchLibraryTab: el => switchLibraryTab(el.dataset.arg),
   browseRoot: el => selectBrowseRoot(el.dataset.arg),
   browseOpen: el => openBrowsePath(el.dataset.path),
+  openBrowseRename: () => openBrowseRename(),
+  closeBrowseRename: () => closeBrowseRename(),
+  applyBrowseRename: () => applyBrowseRename(),
+  startBrowseFileRename: el => startBrowseFileRename(el),
+  commitBrowseFileRename: el => {
+    const editor = el.closest('.browse-rename-inline');
+    const input = editor && editor.querySelector('input');
+    if (input) commitBrowseFileRename(el.dataset.path, input.value);
+  },
+  // Cancelling just re-renders the listing from the server.
+  cancelBrowseFileRename: () => openBrowsePath(state.browsePath),
   setSortMode: el => setSortMode(el.dataset.arg),
   setViewLayout: el => setViewLayout(el.dataset.arg),
   setViewGroup: el => setViewGroup(el.dataset.arg),
@@ -3886,6 +4222,8 @@ document.addEventListener('click', e => {
 
 const CHANGE_ACTIONS = {
   changeUserRole: el => changeUserRole(+el.dataset.id, el.value),
+  browseRenameMode: () => refreshBrowseRenamePreview(),
+  browseRenameVolume: el => browseRenameVolume(el),
   toggleForeignLangFilter: () => toggleForeignLangFilter(),
   toggleRemoveTorrent: () => toggleRemoveTorrent(),
 };
@@ -3925,6 +4263,15 @@ document.addEventListener('input', e => {
   if (!row) return;
   clearTimeout(renamePreviewTimer);
   renamePreviewTimer = setTimeout(refreshRenamePreview, 400);
+});
+
+// Same idea for the Browse rename panel. Only the rows are re-rendered, so the
+// series field keeps its focus and caret while the preview refreshes under it.
+let browseRenameTimer = null;
+document.addEventListener('input', e => {
+  if (e.target.id !== 'browse-rename-series') return;
+  clearTimeout(browseRenameTimer);
+  browseRenameTimer = setTimeout(refreshBrowseRenamePreview, 400);
 });
 
 // Cover-image fallback (replaces inline onerror=). 'error' events don't

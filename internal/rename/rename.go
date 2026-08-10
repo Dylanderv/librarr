@@ -147,18 +147,70 @@ func FileName(series, original string, singleFile bool) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	return volumeFileName(safe, ext, n), true
+}
+
+// volumeFileName formats "<Series> Vol.NN.ext" from an already sanitized series
+// name. Three digits past 99 so Vol.100 does not sort before Vol.99.
+func volumeFileName(safeSeries, ext string, n int) string {
 	width := 2
 	if n > 99 {
 		width = 3
 	}
-	return fmt.Sprintf("%s Vol.%0*d%s", safe, width, n, ext), true
+	return fmt.Sprintf("%s Vol.%0*d%s", safeSeries, width, n, ext)
+}
+
+// TargetFileName is FileName with an optional caller-supplied volume number
+// taking precedence over detection. A forced volume also settles the single-file
+// case: the user asked for that number, so it is written even when the name
+// carries none.
+func TargetFileName(series, original string, singleFile bool, volume *int) (string, bool) {
+	if n, ok := (FileInput{Volume: volume}).ForcedVolume(); ok {
+		return volumeFileName(SanitizeSegment(series), filepath.Ext(original), n), true
+	}
+	return FileName(series, original, singleFile)
+}
+
+// FileInput is one file to consider, with an optional volume number supplied by
+// the user. A non-nil Volume wins over what VolumeNumber reads from the name:
+// automatic detection both misses volumes (an unnumbered release) and invents
+// them (the trailing-number fallback reads "Serie_Truc_42" as volume 42), so the
+// user must be able to correct as well as to add. A non-positive value is
+// treated as absent — callers validate their input, and a "volume 0" has no
+// meaning worth guessing at.
+type FileInput struct {
+	Path   string
+	Volume *int
+}
+
+// ForcedVolume returns the caller-supplied volume, if it is usable.
+func (f FileInput) ForcedVolume() (int, bool) {
+	if f.Volume == nil || *f.Volume <= 0 {
+		return 0, false
+	}
+	return *f.Volume, true
 }
 
 // BuildPlan works out the changes for a series whose files live at the given
+// absolute paths, letting volume detection decide on its own. It is a thin
+// wrapper over BuildPlanFor: callers who have user-supplied volume numbers use
+// that instead.
+func BuildPlan(seriesName string, files []string, mode Mode) Plan {
+	inputs := make([]FileInput, len(files))
+	for i, f := range files {
+		inputs[i] = FileInput{Path: f}
+	}
+	return BuildPlanFor(seriesName, inputs, mode)
+}
+
+// BuildPlanFor works out the changes for a series whose files live at the given
 // absolute paths. It renames the folder only when every file shares one parent:
 // a series spread over several directories has no single folder to rename, and
 // picking one would move files around.
-func BuildPlan(seriesName string, files []string, mode Mode) Plan {
+//
+// A file with no usable volume — neither supplied nor detected — lands in
+// Skipped rather than being guessed at.
+func BuildPlanFor(seriesName string, files []FileInput, mode Mode) Plan {
 	var p Plan
 	if mode == ModeNone || len(files) == 0 || strings.TrimSpace(seriesName) == "" {
 		return p
@@ -168,7 +220,7 @@ func BuildPlan(seriesName string, files []string, mode Mode) Plan {
 
 	parents := make(map[string]bool)
 	for _, f := range files {
-		parents[filepath.Dir(f)] = true
+		parents[filepath.Dir(f.Path)] = true
 	}
 
 	folder := ""
@@ -198,8 +250,8 @@ func BuildPlan(seriesName string, files []string, mode Mode) Plan {
 	taken := make(map[string]string, len(files))
 
 	for _, f := range files {
-		base := filepath.Base(f)
-		target, ok := FileName(seriesName, base, singleFile)
+		base := filepath.Base(f.Path)
+		target, ok := TargetFileName(seriesName, base, singleFile, f.Volume)
 		if !ok {
 			p.Skipped = append(p.Skipped,
 				fmt.Sprintf("%s: no volume number found, left as is", base))
@@ -218,7 +270,7 @@ func BuildPlan(seriesName string, files []string, mode Mode) Plan {
 		// The source is the current path; the folder rename, if any, happens
 		// first, so express the destination under destDir.
 		p.Files = append(p.Files, FileChange{
-			From: f,
+			From: f.Path,
 			To:   filepath.Join(destDir, target),
 		})
 	}

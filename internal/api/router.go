@@ -361,6 +361,9 @@ func (s *Server) registerLibraryRoutes() {
 func (s *Server) registerFilesRoutes() {
 	s.mux.HandleFunc("GET /api/files/roots", requireAdmin(s.handleFilesRoots))
 	s.mux.HandleFunc("GET /api/files/list", requireAdmin(s.handleFilesList))
+	s.mux.HandleFunc("POST /api/files/rename/preview", requireAdmin(s.handleFilesRenamePreview))
+	s.mux.HandleFunc("POST /api/files/rename/apply", requireAdmin(s.handleFilesRenameApply))
+	s.mux.HandleFunc("POST /api/files/rename/file", requireAdmin(s.handleFilesRenameFile))
 }
 
 // registerRequestRoutes wires the book request workflow and notifications.

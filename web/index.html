@@ -367,9 +367,61 @@
         <p class="text-slate-400" data-i18n="browse_no_roots_hint">Set MANGA_DIR, EBOOK_DIR or AUDIOBOOK_DIR to browse your files</p>
       </div>
 
-      <nav id="browse-breadcrumb" class="flex items-center flex-wrap gap-1 text-sm text-slate-400 mb-3"></nav>
+      <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <nav id="browse-breadcrumb" class="flex items-center flex-wrap gap-1 text-sm text-slate-400"></nav>
+        <!-- Hidden on a library root: renaming it would move the whole library. -->
+        <button id="browse-rename-btn" data-action="openBrowseRename" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          <span data-i18n="browse_rename">Rename</span>
+        </button>
+      </div>
 
       <div id="browse-error" class="hidden mb-3 px-4 py-2.5 rounded-lg bg-red-900/40 border border-red-600/40 text-sm text-red-200"></div>
+
+      <!-- Rename panel: preview first, apply only on an explicit click. Rows are
+           rendered by app.js (file names may contain quotes). -->
+      <div id="browse-rename-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white" data-i18n="browse_rename_title">Rename folder</h3>
+          <button data-action="closeBrowseRename" class="text-slate-400 hover:text-white text-sm" data-i18n="browse_rename_close">Close</button>
+        </div>
+
+        <div class="px-4 py-3 grid gap-3 sm:grid-cols-2 border-b border-slate-800">
+          <label class="block">
+            <span class="block text-xs text-slate-400 mb-1" data-i18n="browse_rename_series">Series name</span>
+            <input id="browse-rename-series" type="text" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
+          </label>
+          <label class="block">
+            <span class="block text-xs text-slate-400 mb-1" data-i18n="browse_rename_mode">Scope</span>
+            <select id="browse-rename-mode" data-action-change="browseRenameMode" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
+              <option value="folder_and_files" data-i18n="browse_rename_mode_folder_files">Folder and files</option>
+              <option value="folder" data-i18n="browse_rename_mode_folder">Folder only</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="browse-rename-folder" class="px-4 py-2.5 text-sm text-slate-300 border-b border-slate-800"></div>
+        <div id="browse-rename-warnings" class="hidden px-4 py-2 text-xs text-amber-300/90 border-b border-slate-800"></div>
+        <div id="browse-rename-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-b border-red-600/30"></div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr class="border-b border-slate-800">
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_rename_col_current">Current name</th>
+                <th class="text-left font-medium px-4 py-2 w-24" data-i18n="browse_rename_col_volume">Volume</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_rename_col_target">New name</th>
+              </tr>
+            </thead>
+            <tbody id="browse-rename-rows" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
+          <span id="browse-rename-summary" class="text-xs text-slate-400"></span>
+          <button id="browse-rename-apply" data-action="applyBrowseRename" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_rename_apply">Apply</button>
+        </div>
+      </div>
 
       <div id="browse-empty" class="hidden text-center py-12">
         <p class="text-slate-400" data-i18n="browse_empty_dir">This folder is empty</p>
@@ -778,6 +830,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260810"></script>
+<script src="/static/js/app.js?v=20260810b"></script>
 </body>
 </html>
