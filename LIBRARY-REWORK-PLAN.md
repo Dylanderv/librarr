@@ -129,7 +129,7 @@ Critère de suppression de l'ancien onglet Library : quand Browse couvre lister 
 
 ## Étape 4 — Métadonnées
 
-**Statut : à faire**
+**Statut : terminé**
 
 - `filewriter.Read(path) (Fields, error)` — brique manquante : le package n'expose
   aujourd'hui que `Apply`. Réutiliser `readZipEntry` et les parseurs
@@ -143,6 +143,24 @@ Critère de suppression de l'ancien onglet Library : quand Browse couvre lister 
   `filewriter.Apply` fichier par fichier, erreurs collectées sans interrompre le lot.
 - Front : panneau d'édition dossier et panneau fichier, champs grisés + raison
   pour les formats non éditables.
+
+Arbitrages pris pendant l'implémentation :
+
+- **Borne de propagation** : `metadataMaxFiles = 500` fichiers par aperçu ou
+  application. Lire des métadonnées = ouvrir une archive, soit au moins un
+  aller-retour NFS par fichier. Au-delà, la réponse porte `truncated: true` et
+  une notice — un aperçu tronqué en silence se lirait comme une couverture
+  complète.
+- **Champs par fichier vs propageables** : `title`, `series_index` et `isbn`
+  identifient un volume ; le serveur les **refuse** (400) quand la cible est un
+  dossier, l'UI ne fait que les masquer. Les autres (`series`, `summary`,
+  `publisher`, `language`, `authors`, `genres`, `tags`) décrivent l'œuvre et se
+  propagent.
+- **Informations vs erreurs** : les réponses séparent `notices`
+  (`{key, count}`, traduisibles) de `errors` (échecs réels). Le chemin Kavita
+  (`applyMetadataToSeries`) continue d'empiler ses `Plan.Skipped` dans `Errors`
+  avec le préfixe « not renamed: » ; il n'a pas de test direct, donc il est
+  laissé tel quel — dette à traiter avec l'étape 5 ou plus tard.
 
 ---
 

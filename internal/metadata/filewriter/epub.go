@@ -2,6 +2,7 @@ package filewriter
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -17,7 +18,7 @@ func applyEPUB(path string, f Fields) error {
 		return err
 	}
 	if container == nil {
-		return fmt.Errorf("epub missing META-INF/container.xml")
+		return errEPUBNoContainer
 	}
 
 	opfPath, err := opfPathFromContainer(container)
@@ -30,7 +31,7 @@ func applyEPUB(path string, f Fields) error {
 		return err
 	}
 	if opf == nil {
-		return fmt.Errorf("epub OPF not found at %q", opfPath)
+		return errEPUBNoOPF{Path: opfPath}
 	}
 
 	edited, err := editOPF(opf, f)
@@ -59,15 +60,25 @@ func opfPathFromContainer(container []byte) (string, error) {
 
 var metadataOpenRe = regexp.MustCompile(`(?is)<([a-z0-9]+:)?metadata\b[^>]*>`)
 
-// editOPF applies the requested field changes to an OPF document and returns
-// the modified bytes. It only rewrites the inner content of the <metadata>
-// element; everything else is preserved byte-for-byte.
-func editOPF(opf []byte, f Fields) ([]byte, error) {
+// errEPUBNoContainer and errEPUBNoOPF describe a structurally broken EPUB, as
+// opposed to a valid one that simply carries no metadata. Read distinguishes
+// the two: the former is an error, the latter an empty result.
+var errEPUBNoContainer = errors.New("epub missing META-INF/container.xml")
+
+type errEPUBNoOPF struct{ Path string }
+
+func (e errEPUBNoOPF) Error() string { return fmt.Sprintf("epub OPF not found at %q", e.Path) }
+
+// opfMetadataSection locates the inner content of the OPF <metadata> element
+// and the byte offsets that delimit it, so a caller can either parse it (Read)
+// or splice an edited version back in (editOPF) without duplicating the
+// namespace-prefix handling.
+func opfMetadataSection(opf []byte) (inner string, start, end int, err error) {
 	s := string(opf)
 
 	loc := metadataOpenRe.FindStringSubmatchIndex(s)
 	if loc == nil {
-		return nil, fmt.Errorf("OPF has no <metadata> element")
+		return "", 0, 0, fmt.Errorf("OPF has no <metadata> element")
 	}
 	prefix := ""
 	if loc[2] >= 0 {
@@ -77,11 +88,23 @@ func editOPF(opf []byte, f Fields) ([]byte, error) {
 	closeTag := "</" + prefix + "metadata>"
 	closeIdx := strings.Index(strings.ToLower(s[openEnd:]), strings.ToLower(closeTag))
 	if closeIdx < 0 {
-		return nil, fmt.Errorf("OPF has no closing %s", closeTag)
+		return "", 0, 0, fmt.Errorf("OPF has no closing %s", closeTag)
 	}
 	closeIdx += openEnd
 
-	inner := s[openEnd:closeIdx]
+	return s[openEnd:closeIdx], openEnd, closeIdx, nil
+}
+
+// editOPF applies the requested field changes to an OPF document and returns
+// the modified bytes. It only rewrites the inner content of the <metadata>
+// element; everything else is preserved byte-for-byte.
+func editOPF(opf []byte, f Fields) ([]byte, error) {
+	s := string(opf)
+
+	inner, openEnd, closeIdx, err := opfMetadataSection(opf)
+	if err != nil {
+		return nil, err
+	}
 
 	if f.Title != nil {
 		inner = replaceDC(inner, "title", []string{*f.Title})

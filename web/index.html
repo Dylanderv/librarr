@@ -369,11 +369,19 @@
 
       <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
         <nav id="browse-breadcrumb" class="flex items-center flex-wrap gap-1 text-sm text-slate-400"></nav>
-        <!-- Hidden on a library root: renaming it would move the whole library. -->
-        <button id="browse-rename-btn" data-action="openBrowseRename" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-          <span data-i18n="browse_rename">Rename</span>
-        </button>
+        <!-- Both hidden on a library root: renaming it would move the whole
+             library, and a folder-wide metadata edit there would cover every
+             series at once. -->
+        <div class="flex items-center gap-2">
+          <button id="browse-meta-btn" data-action="openBrowseMeta" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>
+            <span data-i18n="browse_meta">Metadata</span>
+          </button>
+          <button id="browse-rename-btn" data-action="openBrowseRename" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <span data-i18n="browse_rename">Rename</span>
+          </button>
+        </div>
       </div>
 
       <div id="browse-error" class="hidden mb-3 px-4 py-2.5 rounded-lg bg-red-900/40 border border-red-600/40 text-sm text-red-200"></div>
@@ -420,6 +428,78 @@
         <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
           <span id="browse-rename-summary" class="text-xs text-slate-400"></span>
           <button id="browse-rename-apply" data-action="applyBrowseRename" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_rename_apply">Apply</button>
+        </div>
+      </div>
+
+      <!-- Folder metadata panel: only the fields that describe the work, never
+           the ones that identify a single volume (title, volume number, ISBN) —
+           propagating those would make every file claim to be the same book.
+           Preview first, apply on an explicit click (decision 4). -->
+      <div id="browse-meta-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white" data-i18n="browse_meta_folder_title">Folder metadata</h3>
+          <button data-action="closeBrowseMeta" class="text-slate-400 hover:text-white text-sm" data-i18n="browse_meta_close">Close</button>
+        </div>
+
+        <p class="px-4 pt-3 text-xs text-slate-500" data-i18n="browse_meta_folder_hint">Ticked fields are written to every file in this folder, replacing what is already there.</p>
+
+        <div id="browse-meta-fields" class="px-4 py-3 grid gap-2"></div>
+
+        <div class="px-4 pb-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+          <label class="flex items-center gap-2">
+            <input id="browse-meta-recursive" type="checkbox" data-action-change="browseMetaDirty" class="rounded border-slate-600 bg-slate-800">
+            <span data-i18n="browse_meta_recursive">Include subfolders</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <input id="browse-meta-append" type="checkbox" data-action-change="browseMetaDirty" class="rounded border-slate-600 bg-slate-800">
+            <span data-i18n="browse_meta_append">Add to existing lists instead of replacing</span>
+          </label>
+        </div>
+
+        <div id="browse-meta-notices" class="hidden px-4 py-2 text-xs text-amber-300/90 border-t border-slate-800"></div>
+        <div id="browse-meta-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-t border-red-600/30"></div>
+
+        <div id="browse-meta-preview" class="hidden overflow-x-auto border-t border-slate-800">
+          <table class="w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr class="border-b border-slate-800">
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_meta_col_file">File</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_meta_col_field">Field</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_meta_col_current">Current value</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_meta_col_target">New value</th>
+              </tr>
+            </thead>
+            <tbody id="browse-meta-rows" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
+          <span id="browse-meta-summary" class="text-xs text-slate-400"></span>
+          <div class="flex items-center gap-2">
+            <button data-action="previewBrowseMeta" class="px-4 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors" data-i18n="browse_meta_preview">Preview</button>
+            <button id="browse-meta-apply" data-action="applyBrowseMeta" disabled class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_meta_apply">Apply</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Single-file metadata panel: every field, including the per-volume ones.
+           Values are pre-filled from the file, so saving overwrites only what the
+           user can already see. -->
+      <div id="browse-file-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 id="browse-file-title" class="text-sm font-semibold text-white truncate"></h3>
+          <button data-action="closeBrowseFileMeta" class="text-slate-400 hover:text-white text-sm shrink-0 ml-3" data-i18n="browse_meta_close">Close</button>
+        </div>
+
+        <!-- Decision 11: a locked format says why, and the reason differs per format. -->
+        <div id="browse-file-locked" class="hidden px-4 py-2.5 text-xs text-amber-300/90 border-b border-slate-800"></div>
+
+        <div id="browse-file-fields" class="px-4 py-3 grid gap-2"></div>
+
+        <div id="browse-file-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-t border-red-600/30"></div>
+
+        <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-800">
+          <button id="browse-file-save" data-action="applyBrowseFileMeta" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_meta_save">Save</button>
         </div>
       </div>
 
@@ -830,6 +910,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260810b"></script>
+<script src="/static/js/app.js?v=20260810c"></script>
 </body>
 </html>

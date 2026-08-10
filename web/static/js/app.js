@@ -316,6 +316,60 @@ const I18N = {
     browse_rename_file_cancel: 'Cancel',
     browse_rename_file_done: 'File renamed',
     browse_rename_file_failed: 'Failed to rename this file',
+    // Metadata — folder panel
+    browse_meta: 'Metadata',
+    browse_meta_folder_title: 'Folder metadata',
+    browse_meta_close: 'Close',
+    browse_meta_folder_hint: 'Ticked fields are written to every file in this folder, replacing what is already there.',
+    browse_meta_recursive: 'Include subfolders',
+    browse_meta_append: 'Add to existing lists instead of replacing',
+    browse_meta_preview: 'Preview',
+    browse_meta_apply: 'Apply',
+    browse_meta_applying: 'Applying…',
+    browse_meta_save: 'Save',
+    browse_meta_saving: 'Saving…',
+    browse_meta_col_file: 'File',
+    browse_meta_col_field: 'Field',
+    browse_meta_col_current: 'Current value',
+    browse_meta_col_target: 'New value',
+    browse_meta_no_fields: 'Tick at least one field to edit',
+    browse_meta_preview_failed: 'Failed to preview this edit',
+    browse_meta_failed: 'Failed to apply this edit',
+    browse_meta_load_failed: 'Failed to read this file',
+    browse_meta_none: 'No file in this folder would change',
+    browse_meta_summary: '{count} file(s) will be written',
+    browse_meta_done: '{count} file(s) written',
+    browse_meta_empty_value: '(empty)',
+    // Per-file metadata panel
+    browse_meta_file: 'Edit metadata',
+    browse_meta_file_title: 'Metadata — {name}',
+    // Field labels
+    browse_meta_f_title: 'Title',
+    browse_meta_f_series: 'Series',
+    browse_meta_f_series_index: 'Volume number',
+    browse_meta_f_summary: 'Summary',
+    browse_meta_f_publisher: 'Publisher',
+    browse_meta_f_language: 'Language',
+    browse_meta_f_isbn: 'ISBN',
+    browse_meta_f_authors: 'Authors',
+    browse_meta_f_genres: 'Genres',
+    browse_meta_f_tags: 'Tags',
+    browse_meta_list_hint: 'comma-separated',
+    // Row outcomes — keys, so an FYI never reads as a failure.
+    browse_meta_status_edit: 'Will be written',
+    browse_meta_status_unchanged: 'Already up to date',
+    browse_meta_status_unsupported: 'Rename only',
+    browse_meta_status_error: 'Could not be read',
+    // Why a format cannot hold metadata — one message per format, because the
+    // answer to each is different.
+    browse_meta_reason_pdf_ignored_by_kavita: 'Kavita ignores PDF metadata: only the folder and file names matter, so rename instead.',
+    browse_meta_reason_cbr_rar_archive: 'A CBR is a RAR archive, which librarr cannot rewrite. Convert it to CBZ to make it editable.',
+    browse_meta_reason_audio_unsupported: 'Audiobook tags are outside what librarr writes; only renaming is available.',
+    browse_meta_reason_format_unsupported: 'This format holds no metadata librarr can write.',
+    // Informational notices, kept apart from errors.
+    browse_meta_notice_truncated: 'Only the first {count} files were inspected — this preview is partial',
+    browse_meta_notice_unsupported_skipped: '{count} file(s) cannot hold metadata and are left alone',
+    browse_meta_notice_already_up_to_date: '{count} file(s) already hold these values',
   },
   ru: {
     // Navigation
@@ -659,6 +713,13 @@ const state = {
   renamePath: null,
   renameVolumes: {},
   renamePreview: null,
+  // Metadata panels: the folder / file each was opened on. metaPreview holds the
+  // last preview, and is dropped as soon as any input changes — applying a plan
+  // the user is no longer looking at is exactly what decision 4 forbids.
+  metaPath: null,
+  metaPreview: null,
+  metaFilePath: null,
+  metaFileEditable: false,
   // Bulk metadata selection (manga/Kavita tab only).
   selectMode: false,
   selectedSeries: new Map(), // Kavita series id -> name
@@ -3585,6 +3646,7 @@ async function loadStats() {
 const BROWSE_FOLDER_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
 const BROWSE_FILE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>';
 const BROWSE_PENCIL_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
+const BROWSE_TAG_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>';
 const BROWSE_UP_ICON ='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>';
 
 // Kinds this build knows how to label; anything else falls back to "other".
@@ -3654,8 +3716,13 @@ async function openBrowsePath(path) {
   state.browseIsRoot = !!data.is_root;
   // Leaving the folder invalidates the plan that was previewed on it.
   if (state.renamePath && state.renamePath !== data.path) closeBrowseRename();
+  if (state.metaPath && state.metaPath !== data.path) closeBrowseMeta();
+  // The file panel is anchored to one file, which the new listing no longer shows.
+  if (state.metaFilePath) closeBrowseFileMeta();
   // A library root is never renamable, so the button has nothing to offer there.
   document.getElementById('browse-rename-btn').classList.toggle('hidden', state.browseIsRoot);
+  // Same for a folder-wide metadata edit: at the root it would cover every series.
+  document.getElementById('browse-meta-btn').classList.toggle('hidden', state.browseIsRoot);
   renderBrowseRoots();
   renderBrowseBreadcrumb(data);
   renderBrowseEntries(data);
@@ -3708,7 +3775,10 @@ function browseCrumb(label, path, isCurrent) {
 
 function clearBrowseListing() {
   closeBrowseRename();
+  closeBrowseMeta();
+  closeBrowseFileMeta();
   document.getElementById('browse-rename-btn').classList.add('hidden');
+  document.getElementById('browse-meta-btn').classList.add('hidden');
   document.getElementById('browse-breadcrumb').innerHTML = '';
   document.getElementById('browse-list').innerHTML = '';
   document.getElementById('browse-empty').classList.add('hidden');
@@ -3764,6 +3834,7 @@ function browseRow(entry, targetPath, isParent) {
   const meta = document.createElement('span');
   meta.className = 'shrink-0 flex items-center gap-3 text-xs text-slate-500';
   if (!entry.is_dir) {
+    meta.appendChild(browseFileMetaButton(targetPath));
     meta.appendChild(browseRenameFileButton());
     meta.appendChild(browseKindBadge(entry));
     const size = document.createElement('span');
@@ -3792,16 +3863,31 @@ function browseRenameFileButton() {
   return btn;
 }
 
+// Opens the per-file metadata panel. Present on every file, editable or not:
+// decision 11 wants a locked format to explain itself, which it can only do
+// once the panel is open.
+function browseFileMetaButton(path) {
+  const btn = document.createElement('button');
+  btn.className = 'text-slate-500 hover:text-indigo-300 transition-colors';
+  btn.dataset.action = 'openBrowseFileMeta';
+  btn.dataset.path = path;
+  btn.title = t('browse_meta_file');
+  btn.setAttribute('aria-label', t('browse_meta_file'));
+  btn.innerHTML = BROWSE_TAG_ICON;
+  return btn;
+}
+
 function browseKindBadge(entry) {
   const badge = document.createElement('span');
   const kind = BROWSE_KINDS.has(entry.kind) ? entry.kind : 'other';
-  // Editable formats (CBZ, EPUB) are highlighted: they are the ones the coming
-  // metadata editor will accept.
+  // Editable formats (CBZ, EPUB) are highlighted; the others carry the
+  // rename-only badge, since renaming is the only lever they leave (decision 11).
   badge.className = 'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide '
     + (entry.editable
       ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
       : 'bg-slate-700/40 text-slate-400 border border-slate-600/40');
   badge.textContent = t(`browse_kind_${kind}`);
+  if (!entry.editable) badge.title = t('browse_meta_status_unsupported');
   return badge;
 }
 
@@ -4082,6 +4168,411 @@ function hideBrowseRenameError() {
 }
 
 // ============================================================
+// BROWSE — METADATA (folder propagation and single file)
+// ============================================================
+// Two panels, two different contracts.
+//
+// The folder panel only offers the fields that describe the *work* — a series,
+// its publisher, its genres. Title, volume number and ISBN identify one volume,
+// and writing the same one into every file of a folder produces a series whose
+// volumes all claim to be the same book. The server refuses them on a folder
+// too: a guard that lives only here is not a guard.
+//
+// Nothing is applied implicitly. The folder panel previews first, the preview
+// shows the value each field currently holds next to the one that would replace
+// it (decision 4: we overwrite, but never without showing), and Apply is a
+// separate click. Editing any input drops the preview, so Apply can never send
+// a plan the user is no longer looking at.
+//
+// The file panel is pre-filled from the file itself, so what would be
+// overwritten is already on screen; it saves directly.
+
+// Fields that describe the work and therefore propagate over a folder.
+const BROWSE_META_FOLDER_FIELDS = ['series', 'summary', 'publisher', 'language', 'authors', 'genres', 'tags'];
+// Everything the single-file panel offers, per-volume fields included.
+const BROWSE_META_FILE_FIELDS = ['title', 'series', 'series_index', 'summary', 'publisher', 'language', 'isbn', 'authors', 'genres', 'tags'];
+const BROWSE_META_LIST_FIELDS = new Set(['authors', 'genres', 'tags']);
+const BROWSE_META_LONG_FIELDS = new Set(['summary']);
+
+// buildMetaField renders one labelled input. withToggle adds the checkbox that
+// arms the field: the API distinguishes "leave this alone" (key absent) from
+// "set it to empty" (key present, empty), and only an explicit tick can express
+// the difference.
+function buildMetaField(field, idPrefix, withToggle) {
+  const wrap = document.createElement('label');
+  wrap.className = 'block';
+
+  const head = document.createElement('span');
+  head.className = 'flex items-center gap-2 mb-1';
+  if (withToggle) {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = `${idPrefix}-en-${field}`;
+    cb.className = 'rounded border-slate-600 bg-slate-800';
+    cb.dataset.actionChange = 'browseMetaToggle';
+    cb.dataset.field = field;
+    head.appendChild(cb);
+  }
+  const label = document.createElement('span');
+  label.className = 'text-xs text-slate-400';
+  label.textContent = t(`browse_meta_f_${field}`)
+    + (BROWSE_META_LIST_FIELDS.has(field) ? ` (${t('browse_meta_list_hint')})` : '');
+  head.appendChild(label);
+  wrap.appendChild(head);
+
+  const input = document.createElement(BROWSE_META_LONG_FIELDS.has(field) ? 'textarea' : 'input');
+  if (input.tagName === 'TEXTAREA') input.rows = 3;
+  else input.type = 'text';
+  input.id = `${idPrefix}-${field}`;
+  input.className = 'w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed';
+  if (withToggle) {
+    // Folder panel only: editing a value invalidates the preview it was
+    // measured against. The file panel has no preview to drop.
+    input.dataset.actionChange = 'browseMetaDirty';
+    input.disabled = true;
+  }
+  wrap.appendChild(input);
+
+  return wrap;
+}
+
+function browseMetaValue(idPrefix, field) {
+  const el = document.getElementById(`${idPrefix}-${field}`);
+  return el ? el.value : '';
+}
+
+// browseMetaPayloadFields turns the panel into the API's `fields` object. Only
+// the fields it returns are touched; the rest are left exactly as they are.
+function browseMetaPayloadFields(idPrefix, fields, isEnabled) {
+  const out = {};
+  fields.forEach(field => {
+    if (!isEnabled(field)) return;
+    const raw = browseMetaValue(idPrefix, field);
+    if (BROWSE_META_LIST_FIELDS.has(field)) {
+      out[field] = raw.split(',').map(v => v.trim()).filter(Boolean);
+    } else {
+      out[field] = raw;
+    }
+  });
+  return out;
+}
+
+// renderMetaNotices shows the informational side of a response. Notices are
+// never errors: "12 files are already up to date" is an answer, not a fault,
+// and the two must not share a red box.
+function renderMetaNotices(el, notices) {
+  const lines = (notices || []).map(n => t(`browse_meta_notice_${n.key}`, { count: n.count }));
+  el.textContent = lines.join(' · ');
+  el.classList.toggle('hidden', lines.length === 0);
+}
+
+// --- Folder panel --------------------------------------------------------
+
+function openBrowseMeta() {
+  if (!state.browsePath || state.browseIsRoot) return;
+  state.metaPath = state.browsePath;
+  state.metaPreview = null;
+
+  const host = document.getElementById('browse-meta-fields');
+  host.innerHTML = '';
+  BROWSE_META_FOLDER_FIELDS.forEach(field => {
+    host.appendChild(buildMetaField(field, 'browse-meta', true));
+  });
+  document.getElementById('browse-meta-recursive').checked = false;
+  document.getElementById('browse-meta-append').checked = false;
+  document.getElementById('browse-meta-panel').classList.remove('hidden');
+  resetBrowseMetaPreview();
+}
+
+function closeBrowseMeta() {
+  state.metaPath = null;
+  state.metaPreview = null;
+  const panel = document.getElementById('browse-meta-panel');
+  if (panel) panel.classList.add('hidden');
+  hideBrowseMetaError();
+}
+
+function browseMetaEnabled(field) {
+  const cb = document.getElementById(`browse-meta-en-${field}`);
+  return !!(cb && cb.checked);
+}
+
+// Any change to the form invalidates the preview: the Apply button must never
+// be armed against a plan that is no longer on screen.
+function resetBrowseMetaPreview() {
+  state.metaPreview = null;
+  document.getElementById('browse-meta-preview').classList.add('hidden');
+  document.getElementById('browse-meta-rows').innerHTML = '';
+  document.getElementById('browse-meta-notices').classList.add('hidden');
+  document.getElementById('browse-meta-summary').textContent = '';
+  document.getElementById('browse-meta-apply').disabled = true;
+}
+
+function browseMetaToggle(el) {
+  const input = document.getElementById(`browse-meta-${el.dataset.field}`);
+  if (input) {
+    input.disabled = !el.checked;
+    if (el.checked) input.focus();
+  }
+  resetBrowseMetaPreview();
+}
+
+function browseMetaPayload() {
+  return {
+    path: state.metaPath,
+    recursive: document.getElementById('browse-meta-recursive').checked,
+    mode: document.getElementById('browse-meta-append').checked ? 'append' : 'set',
+    fields: browseMetaPayloadFields('browse-meta', BROWSE_META_FOLDER_FIELDS, browseMetaEnabled),
+  };
+}
+
+async function previewBrowseMeta() {
+  if (!state.metaPath) return;
+  hideBrowseMetaError();
+  const payload = browseMetaPayload();
+  if (Object.keys(payload.fields).length === 0) {
+    showBrowseMetaError(t('browse_meta_no_fields'));
+    return;
+  }
+
+  let data;
+  try {
+    data = await postFiles('/api/files/metadata/preview', payload);
+  } catch (err) {
+    resetBrowseMetaPreview();
+    showBrowseMetaError(err.message || t('browse_meta_preview_failed'));
+    return;
+  }
+  state.metaPreview = data;
+  renderBrowseMetaPreview(data);
+}
+
+function renderBrowseMetaPreview(data) {
+  const body = document.getElementById('browse-meta-rows');
+  body.innerHTML = '';
+  (data.files || []).forEach(file => browseMetaRows(file).forEach(tr => body.appendChild(tr)));
+  document.getElementById('browse-meta-preview').classList.remove('hidden');
+
+  renderMetaNotices(document.getElementById('browse-meta-notices'), data.notices);
+
+  const willWrite = (data.files || []).filter(f => f.status === 'edit').length;
+  document.getElementById('browse-meta-summary').textContent =
+    willWrite === 0 ? t('browse_meta_none') : t('browse_meta_summary', { count: willWrite });
+  document.getElementById('browse-meta-apply').disabled = willWrite === 0;
+}
+
+// One <tr> per changed field, plus a single explanatory row for files that hold
+// no writable metadata — the reason is what makes the row worth showing.
+function browseMetaRows(file) {
+  const rows = [];
+  if (file.status !== 'edit') {
+    rows.push(browseMetaStatusRow(file));
+    return rows;
+  }
+  const changes = (file.changes || []).filter(c => c.changed);
+  if (changes.length === 0) {
+    rows.push(browseMetaStatusRow(file));
+    return rows;
+  }
+  changes.forEach((change, i) => {
+    const tr = document.createElement('tr');
+    tr.appendChild(browseMetaCell(i === 0 ? file.name : '', 'text-slate-300 break-all'));
+    tr.appendChild(browseMetaCell(t(`browse_meta_f_${change.field}`), 'text-slate-400'));
+    tr.appendChild(browseMetaCell(change.current || t('browse_meta_empty_value'),
+      change.current ? 'text-amber-300/90 break-all' : 'text-slate-600 break-all'));
+    tr.appendChild(browseMetaCell(change.target || t('browse_meta_empty_value'),
+      change.target ? 'text-emerald-300 break-all' : 'text-slate-600 break-all'));
+    rows.push(tr);
+  });
+  return rows;
+}
+
+function browseMetaStatusRow(file) {
+  const tr = document.createElement('tr');
+  tr.appendChild(browseMetaCell(file.name, 'text-slate-400 break-all'));
+  const td = document.createElement('td');
+  td.colSpan = 3;
+  td.className = 'px-4 py-2 align-middle text-xs text-slate-500';
+  let text = t(`browse_meta_status_${file.status}`);
+  if (file.reason) text += ' — ' + t(`browse_meta_reason_${file.reason}`);
+  if (file.error) text += ' — ' + file.error;
+  td.textContent = text;
+  tr.appendChild(td);
+  return tr;
+}
+
+function browseMetaCell(text, cls) {
+  const td = document.createElement('td');
+  td.className = 'px-4 py-2 align-middle text-sm ' + cls;
+  td.textContent = text;
+  return td;
+}
+
+async function applyBrowseMeta() {
+  // Only a preview arms this button, so applying always follows a look.
+  if (!state.metaPath || !state.metaPreview) return;
+  const btn = document.getElementById('browse-meta-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_meta_applying');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/metadata/apply', browseMetaPayload());
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseMetaError(err.message || t('browse_meta_failed'));
+    return;
+  }
+  btn.textContent = label;
+
+  const failed = data.errors && data.errors.length;
+  if (failed) showBrowseMetaError(data.errors.join(' · '));
+  else hideBrowseMetaError();
+  renderMetaNotices(document.getElementById('browse-meta-notices'), data.notices);
+  showToast(t('browse_meta_done', { count: data.written || 0 }), failed ? 'error' : 'success');
+
+  resetBrowseMetaPreview();
+  await openBrowsePath(state.browsePath);
+}
+
+function showBrowseMetaError(message) {
+  const el = document.getElementById('browse-meta-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function hideBrowseMetaError() {
+  const el = document.getElementById('browse-meta-error');
+  if (el) el.classList.add('hidden');
+}
+
+// --- Single-file panel ---------------------------------------------------
+
+async function openBrowseFileMeta(path) {
+  closeBrowseMeta();
+  state.metaFilePath = path;
+  state.metaFileEditable = false;
+
+  const panel = document.getElementById('browse-file-panel');
+  const host = document.getElementById('browse-file-fields');
+  host.innerHTML = '';
+  BROWSE_META_FILE_FIELDS.forEach(field => {
+    host.appendChild(buildMetaField(field, 'browse-file', false));
+  });
+  document.getElementById('browse-file-title').textContent =
+    t('browse_meta_file_title', { name: browseBaseName(path) });
+  panel.classList.remove('hidden');
+  hideBrowseFileMetaError();
+
+  // Metadata is read here and nowhere else (decision 9): opening one archive on
+  // demand is affordable, opening every archive of a listing is not.
+  let data;
+  try {
+    data = await apiJson(`/api/files/metadata?path=${encodeURIComponent(path)}`);
+  } catch (err) {
+    showBrowseFileMetaError(t('browse_meta_load_failed'));
+    lockBrowseFileMeta('');
+    return;
+  }
+  if (state.metaFilePath !== path) return; // a newer panel won the race
+
+  const fields = data.fields || {};
+  BROWSE_META_FILE_FIELDS.forEach(field => {
+    const el = document.getElementById(`browse-file-${field}`);
+    if (!el) return;
+    const value = fields[field];
+    el.value = Array.isArray(value) ? value.join(', ') : (value || '');
+  });
+
+  if (!data.editable) {
+    lockBrowseFileMeta(data.reason || 'format_unsupported');
+    return;
+  }
+  state.metaFileEditable = true;
+  document.getElementById('browse-file-locked').classList.add('hidden');
+  document.getElementById('browse-file-save').disabled = false;
+}
+
+// A locked file keeps its panel — greyed out, with the reason spelled out.
+// Decision 11 asks for three distinct explanations, not one generic one,
+// because what the user should do next differs: rename a PDF, convert a CBR,
+// nothing at all for audio.
+function lockBrowseFileMeta(reason) {
+  state.metaFileEditable = false;
+  BROWSE_META_FILE_FIELDS.forEach(field => {
+    const el = document.getElementById(`browse-file-${field}`);
+    if (el) el.disabled = true;
+  });
+  document.getElementById('browse-file-save').disabled = true;
+  const banner = document.getElementById('browse-file-locked');
+  if (!reason) {
+    banner.classList.add('hidden');
+    return;
+  }
+  banner.textContent = t('browse_meta_status_unsupported') + ' — ' + t(`browse_meta_reason_${reason}`);
+  banner.classList.remove('hidden');
+}
+
+function closeBrowseFileMeta() {
+  state.metaFilePath = null;
+  state.metaFileEditable = false;
+  const panel = document.getElementById('browse-file-panel');
+  if (panel) panel.classList.add('hidden');
+  hideBrowseFileMetaError();
+}
+
+async function applyBrowseFileMeta() {
+  if (!state.metaFilePath || !state.metaFileEditable) return;
+  const btn = document.getElementById('browse-file-save');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_meta_saving');
+
+  // Every field is sent, emptied ones included: the panel shows the file's
+  // current values, so what is on screen is what will be stored.
+  const payload = {
+    path: state.metaFilePath,
+    mode: 'set',
+    fields: browseMetaPayloadFields('browse-file', BROWSE_META_FILE_FIELDS, () => true),
+  };
+
+  let data;
+  try {
+    data = await postFiles('/api/files/metadata/apply', payload);
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseFileMetaError(err.message || t('browse_meta_failed'));
+    return;
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+
+  const failed = data.errors && data.errors.length;
+  if (failed) {
+    showBrowseFileMetaError(data.errors.join(' · '));
+  } else {
+    hideBrowseFileMetaError();
+    closeBrowseFileMeta();
+  }
+  showToast(t('browse_meta_done', { count: data.written || 0 }), failed ? 'error' : 'success');
+  await openBrowsePath(state.browsePath);
+}
+
+function showBrowseFileMetaError(message) {
+  const el = document.getElementById('browse-file-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function hideBrowseFileMetaError() {
+  const el = document.getElementById('browse-file-error');
+  if (el) el.classList.add('hidden');
+}
+
+// ============================================================
 // UTILITIES
 // ============================================================
 function escapeHtml(str) {
@@ -4167,6 +4658,13 @@ const CLICK_ACTIONS = {
   },
   // Cancelling just re-renders the listing from the server.
   cancelBrowseFileRename: () => openBrowsePath(state.browsePath),
+  openBrowseMeta: () => openBrowseMeta(),
+  closeBrowseMeta: () => closeBrowseMeta(),
+  previewBrowseMeta: () => previewBrowseMeta(),
+  applyBrowseMeta: () => applyBrowseMeta(),
+  openBrowseFileMeta: el => openBrowseFileMeta(el.dataset.path),
+  closeBrowseFileMeta: () => closeBrowseFileMeta(),
+  applyBrowseFileMeta: () => applyBrowseFileMeta(),
   setSortMode: el => setSortMode(el.dataset.arg),
   setViewLayout: el => setViewLayout(el.dataset.arg),
   setViewGroup: el => setViewGroup(el.dataset.arg),
@@ -4224,6 +4722,10 @@ const CHANGE_ACTIONS = {
   changeUserRole: el => changeUserRole(+el.dataset.id, el.value),
   browseRenameMode: () => refreshBrowseRenamePreview(),
   browseRenameVolume: el => browseRenameVolume(el),
+  browseMetaToggle: el => browseMetaToggle(el),
+  // Any edit to the folder form drops the preview, so Apply always follows a
+  // fresh look at what would change.
+  browseMetaDirty: () => resetBrowseMetaPreview(),
   toggleForeignLangFilter: () => toggleForeignLangFilter(),
   toggleRemoveTorrent: () => toggleRemoveTorrent(),
 };
