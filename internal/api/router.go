@@ -315,6 +315,7 @@ func (s *Server) registerLibraryRoutes() {
 	// Kavita metadata editing (writes to the media files, then rescans).
 	s.mux.HandleFunc("GET /api/library/manga/series/{id}/metadata", requireAdmin(s.handleSeriesMetadata))
 	s.mux.HandleFunc("POST /api/library/metadata/bulk", requireAdmin(s.handleBulkMetadata))
+	s.mux.HandleFunc("POST /api/library/metadata/rename-preview", requireAdmin(s.handleRenamePreview))
 	// Online metadata lookup to pre-fill the bulk editor (AniList/Open Library).
 	s.mux.HandleFunc("GET /api/metadata/search", requireAdmin(s.handleMetadataSearch))
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)

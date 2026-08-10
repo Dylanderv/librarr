@@ -202,6 +202,25 @@ and lets the process umask narrow them, the same convention as the linuxserver.i
 If the media server cannot open what librarr imports, this is almost always the
 knob to turn — not a `chown`.
 
+### Renaming on a metadata edit
+
+Kavita names a series after its folder and files whenever the embedded metadata
+does not take precedence, so a torrent-derived name
+(`Inio.Asano.Anthology.OS.Asano.FR.-TONER-Paprika+`) keeps showing in the library
+however good the ComicInfo is. The bulk metadata editor can therefore realign the
+layout with the **Series** field it writes:
+
+- **Folder only** — `Old.Torrent.Name-GROUP/` → `Bakemono Recchan/`
+- **Folder and files** — also renames each file to `<Series> Vol.NN.cbz`, the
+  layout Kavita's scanner reads most reliably. A single-file series drops the
+  volume suffix.
+
+It is opt-in per edit and shows a preview of every change before saving. Files
+whose volume number cannot be read are left alone and listed in the preview
+rather than being numbered by guesswork. A folder is never renamed when it is a
+library root, when the target already exists, or when the series' files are
+spread across several directories.
+
 ### Authentication
 
 | Variable | Default | Description |

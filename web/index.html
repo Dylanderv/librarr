@@ -134,6 +134,14 @@
 
       <div class="space-y-3" id="metadata-fields">
         <!-- rows are enabled via their checkbox; field key is data-field -->
+        <div class="metadata-row" data-field="series">
+          <label class="flex items-center gap-2 mb-1"><input type="checkbox" class="meta-enable accent-indigo-500"><span class="text-sm font-medium text-slate-300" data-i18n="field_series">Series</span><span class="text-xs text-slate-600" data-i18n="field_series_hint">(the name Kavita displays)</span></label>
+          <input type="text" class="meta-value w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-40" disabled placeholder="Bakemono Recchan">
+        </div>
+        <div class="metadata-row" data-field="title">
+          <label class="flex items-center gap-2 mb-1"><input type="checkbox" class="meta-enable accent-indigo-500"><span class="text-sm font-medium text-slate-300" data-i18n="field_title">Title</span><span class="text-xs text-slate-600" data-i18n="field_title_hint">(this volume/chapter)</span></label>
+          <input type="text" class="meta-value w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-40" disabled>
+        </div>
         <div class="metadata-row" data-field="authors">
           <label class="flex items-center gap-2 mb-1"><input type="checkbox" class="meta-enable accent-indigo-500"><span class="text-sm font-medium text-slate-300" data-i18n="field_authors">Authors</span><span class="text-xs text-slate-600" data-i18n="comma_separated">(comma-separated)</span></label>
           <input type="text" class="meta-value w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-40" disabled placeholder="Jane Doe, John Roe">
@@ -157,6 +165,23 @@
         <div class="metadata-row" data-field="summary">
           <label class="flex items-center gap-2 mb-1"><input type="checkbox" class="meta-enable accent-indigo-500"><span class="text-sm font-medium text-slate-300" data-i18n="field_summary">Summary</span></label>
           <textarea class="meta-value w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-40" rows="3" disabled></textarea>
+        </div>
+      </div>
+
+      <!-- Rename folder/files to match the series name being written. Off by
+           default: a bulk edit must never reshape the library by accident. -->
+      <div id="metadata-rename" class="space-y-2 rounded-lg border border-slate-800 bg-slate-800/40 p-3">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="metadata-rename-enable" class="accent-indigo-500">
+          <span class="text-sm font-medium text-slate-300" data-i18n="rename_enable">Also rename on disk</span>
+        </label>
+        <p class="text-xs text-slate-500" data-i18n="rename_help">Kavita names a series after its folder when the file metadata doesn't win. Renaming to the series name above fixes the display at the source. Requires the Series field.</p>
+        <div id="metadata-rename-options" class="hidden space-y-2">
+          <div class="flex items-center gap-4 text-sm">
+            <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer"><input type="radio" name="meta-rename-mode" value="folder" checked class="accent-indigo-500"> <span data-i18n="rename_folder_only">Folder only</span></label>
+            <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer"><input type="radio" name="meta-rename-mode" value="folder_and_files" class="accent-indigo-500"> <span data-i18n="rename_folder_and_files">Folder and files</span></label>
+          </div>
+          <div id="metadata-rename-preview" class="text-xs font-mono text-slate-400 bg-slate-900/60 rounded-lg p-2 max-h-40 overflow-y-auto"></div>
         </div>
       </div>
 

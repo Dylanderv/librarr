@@ -12,6 +12,7 @@ import (
 
 	"github.com/JeremiahM37/librarr/internal/kavita"
 	"github.com/JeremiahM37/librarr/internal/metadata/filewriter"
+	"github.com/JeremiahM37/librarr/internal/rename"
 )
 
 // handleSeriesMetadata returns a series' current metadata (read from Kavita) to
@@ -67,6 +68,9 @@ type bulkMetaRequest struct {
 	SeriesIDs []int          `json:"series_ids"`
 	Mode      string         `json:"mode"` // "set" (replace lists) or "append"
 	Fields    bulkMetaFields `json:"fields"`
+	// Rename optionally realigns the folder and file names with the series name
+	// being written: "none" (default), "folder" or "folder_and_files".
+	Rename string `json:"rename"`
 }
 
 type seriesMetaResult struct {
@@ -74,6 +78,7 @@ type seriesMetaResult struct {
 	FilesTotal   int      `json:"files_total"`
 	FilesWritten int      `json:"files_written"`
 	Rescanned    bool     `json:"rescanned"`
+	PathsRenamed int      `json:"paths_renamed,omitempty"`
 	Errors       []string `json:"errors,omitempty"`
 }
 
@@ -113,33 +118,54 @@ func (s *Server) handleBulkMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	renameMode, err := rename.ParseMode(req.Rename)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	// Renaming needs a name to rename to, and the series field is the only one
+	// that carries it.
+	if renameMode != rename.ModeNone && (fields.Series == nil || strings.TrimSpace(*fields.Series) == "") {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "renaming requires the series field to be set",
+		})
+		return
+	}
+
 	ctx := r.Context()
 	client := s.kavitaClient()
 
 	results := make([]seriesMetaResult, 0, len(req.SeriesIDs))
-	totalWritten := 0
+	totalWritten, totalRenamed := 0, 0
 	for _, id := range req.SeriesIDs {
-		res := s.applyMetadataToSeries(ctx, client, id, fields)
+		res := s.applyMetadataToSeries(ctx, client, id, fields, renameMode)
 		totalWritten += res.FilesWritten
+		totalRenamed += res.PathsRenamed
 		results = append(results, res)
 	}
 
 	username, _ := r.Context().Value(ctxUsername).(string)
 	s.db.LogActivity(username, "metadata_bulk_edit", "",
-		fmt.Sprintf("Bulk metadata edit: %d series, %d files written", len(req.SeriesIDs), totalWritten))
+		fmt.Sprintf("Bulk metadata edit: %d series, %d files written, %d paths renamed",
+			len(req.SeriesIDs), totalWritten, totalRenamed))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":       true,
 		"series_count":  len(req.SeriesIDs),
 		"files_written": totalWritten,
+		"paths_renamed": totalRenamed,
 		"results":       results,
 	})
 }
 
-// applyMetadataToSeries writes the fields into every file of a single series
-// and rescans it. It never returns an error; per-series/per-file problems are
-// captured in the result so one bad series doesn't abort the batch.
-func (s *Server) applyMetadataToSeries(ctx context.Context, client *kavita.Client, id int, fields filewriter.Fields) seriesMetaResult {
+// applyMetadataToSeries writes the fields into every file of a single series,
+// optionally realigns its folder and file names, and rescans it. It never
+// returns an error; per-series/per-file problems are captured in the result so
+// one bad series doesn't abort the batch.
+//
+// Order matters: metadata is written against the current paths, the rename comes
+// next, and the rescan runs last so Kavita only ever sees the final layout.
+func (s *Server) applyMetadataToSeries(ctx context.Context, client *kavita.Client, id int, fields filewriter.Fields, renameMode rename.Mode) seriesMetaResult {
 	res := seriesMetaResult{SeriesID: id}
 
 	files, err := client.FilesForSeries(ctx, id)
@@ -165,6 +191,19 @@ func (s *Server) applyMetadataToSeries(ctx context.Context, client *kavita.Clien
 			continue
 		}
 		res.FilesWritten++
+	}
+
+	if renameMode != rename.ModeNone && res.FilesWritten > 0 {
+		plan := s.buildRenamePlan(ctx, client, id, *fields.Series, renameMode)
+		res.Errors = append(res.Errors, plan.Errors...)
+		for _, skipped := range plan.Plan.Skipped {
+			res.Errors = append(res.Errors, "not renamed: "+skipped)
+		}
+		if !plan.Plan.IsEmpty() {
+			plan.Errors = nil
+			res.PathsRenamed = s.applyRenamePlan(&plan)
+			res.Errors = append(res.Errors, plan.Errors...)
+		}
 	}
 
 	// Only rescan if we actually changed something.

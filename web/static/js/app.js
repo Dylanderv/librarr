@@ -108,6 +108,10 @@ const I18N = {
     list_mode: 'For authors/genres/tags:',
     mode_replace: 'Replace',
     mode_append: 'Append',
+    field_series: 'Series',
+    field_series_hint: '(the name Kavita displays)',
+    field_title: 'Title',
+    field_title_hint: '(this volume/chapter)',
     field_authors: 'Authors',
     field_genres: 'Genres',
     field_tags: 'Tags',
@@ -118,6 +122,14 @@ const I18N = {
     cancel: 'Cancel',
     save_write_files: 'Save & write files',
     metadata_no_fields: 'Enable at least one field to write.',
+    rename_enable: 'Also rename on disk',
+    rename_help: "Kavita names a series after its folder when the file metadata doesn't win. Renaming to the series name above fixes the display at the source. Requires the Series field.",
+    rename_folder_only: 'Folder only',
+    rename_folder_and_files: 'Folder and files',
+    rename_needs_series: 'Enable the Series field to rename on disk.',
+    rename_no_changes: 'Nothing to rename — names already match.',
+    rename_previewing: 'Computing preview…',
+    rename_preview_failed: 'Could not compute the rename preview.',
     writing: 'Writing…',
     metadata_online_help: 'Fetch metadata from an online database to pre-fill the fields below, then review before saving.',
     search_online: 'Search online',
@@ -2443,6 +2455,12 @@ async function openMetadataModal() {
   });
   document.querySelector('input[name="meta-list-mode"][value="set"]').checked = true;
 
+  // Renaming is opt-in per edit: never carry it over from a previous open.
+  document.getElementById('metadata-rename-enable').checked = false;
+  document.getElementById('metadata-rename-options').classList.add('hidden');
+  document.getElementById('metadata-rename-preview').innerHTML = '';
+  document.querySelector('input[name="meta-rename-mode"][value="folder"]').checked = true;
+
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 
@@ -2457,6 +2475,7 @@ async function openMetadataModal() {
   document.getElementById('metadata-online-status').classList.add('hidden');
   const [, firstName] = [...state.selectedSeries.entries()][0];
   document.getElementById('metadata-online-query').value = firstName || '';
+  if (state.selectedSeries.size === 1) prefillMetadataField('series', firstName || '');
 
   // Pre-fill existing values from Kavita only for a single-series edit — these
   // are read per-series and can't be meaningfully merged across a selection.
@@ -2547,6 +2566,7 @@ function applyMetadataCandidate(index) {
     cb.checked = true;
     row.querySelector('.meta-value').disabled = false;
   };
+  apply('series', c.title || '');
   apply('authors', (c.authors || []).join(', '));
   apply('genres', (c.genres || []).join(', '));
   apply('tags', (c.tags || []).join(', '));
@@ -2559,6 +2579,108 @@ function applyMetadataCandidate(index) {
     el.classList.toggle('border-indigo-500', +el.dataset.idx === index);
     el.classList.toggle('bg-indigo-500/10', +el.dataset.idx === index);
   });
+}
+
+// --- Rename preview -------------------------------------------------------
+//
+// The preview calls the same planner the save path uses, so what is shown is
+// what will run. It is recomputed whenever the inputs that feed it change.
+
+let renamePreviewSeq = 0;
+
+function selectedRenameMode() {
+  if (!document.getElementById('metadata-rename-enable').checked) return 'none';
+  const el = document.querySelector('input[name="meta-rename-mode"]:checked');
+  return el ? el.value : 'folder';
+}
+
+function seriesFieldValue() {
+  const row = document.querySelector('#metadata-fields .metadata-row[data-field="series"]');
+  if (!row || !row.querySelector('.meta-enable').checked) return '';
+  return row.querySelector('.meta-value').value.trim();
+}
+
+async function refreshRenamePreview() {
+  const box = document.getElementById('metadata-rename-preview');
+  const mode = selectedRenameMode();
+  if (mode === 'none') {
+    box.innerHTML = '';
+    return;
+  }
+
+  const name = seriesFieldValue();
+  if (!name) {
+    box.innerHTML = `<span class="text-amber-400">${escapeHtml(t('rename_needs_series'))}</span>`;
+    return;
+  }
+
+  // Late responses from a superseded request must not overwrite a newer preview.
+  const seq = ++renamePreviewSeq;
+  box.innerHTML = escapeHtml(t('rename_previewing'));
+
+  try {
+    // api() rather than apiJson() so a 4xx body's {error} reaches the user.
+    const resp = await api('/api/library/metadata/rename-preview', {
+      method: 'POST',
+      body: JSON.stringify({
+        series_ids: [...state.selectedSeries.keys()],
+        series_name: name,
+        mode,
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (seq !== renamePreviewSeq) return;
+    if (!resp.ok) throw new Error(data.error || `API error: ${resp.status}`);
+    box.innerHTML = renderRenamePreview(data.plans || []);
+  } catch (err) {
+    if (seq !== renamePreviewSeq) return;
+    if (err.message !== 'Unauthorized') {
+      box.innerHTML = `<span class="text-red-400">${escapeHtml(err.message || t('rename_preview_failed'))}</span>`;
+    }
+  }
+}
+
+function renderRenamePreview(plans) {
+  const parts = [];
+  let changes = 0;
+
+  for (const p of plans) {
+    const lines = [];
+    if (p.folder_from && p.folder_to) {
+      changes++;
+      lines.push(renameLine(baseName(p.folder_from) + '/', baseName(p.folder_to) + '/'));
+    }
+    for (const f of p.files || []) {
+      changes++;
+      lines.push(renameLine(baseName(f.from), baseName(f.to)));
+    }
+    for (const skip of p.skipped || []) {
+      lines.push(`<div class="text-slate-500">${escapeHtml(skip)}</div>`);
+    }
+    for (const warn of p.warnings || []) {
+      lines.push(`<div class="text-amber-400">${escapeHtml(warn)}</div>`);
+    }
+    for (const e of p.errors || []) {
+      lines.push(`<div class="text-red-400">${escapeHtml(e)}</div>`);
+    }
+    if (lines.length === 0) continue;
+    if (plans.length > 1) {
+      lines.unshift(`<div class="text-slate-300 mt-1">${escapeHtml(p.series_name || `#${p.series_id}`)}</div>`);
+    }
+    parts.push(lines.join(''));
+  }
+
+  if (parts.length === 0) return escapeHtml(t('rename_no_changes'));
+  if (changes === 0) return parts.join('');
+  return parts.join('');
+}
+
+function renameLine(from, to) {
+  return `<div class="flex items-start gap-1 flex-wrap">
+    <span class="text-slate-500 line-through">${escapeHtml(from)}</span>
+    <span class="text-slate-600">→</span>
+    <span class="text-emerald-400">${escapeHtml(to)}</span>
+  </div>`;
 }
 
 function closeMetadataModal() {
@@ -2603,7 +2725,7 @@ async function saveMetadata() {
     // instead of apiJson's generic "API error: 400".
     const resp = await api('/api/library/metadata/bulk', {
       method: 'POST',
-      body: JSON.stringify({ series_ids: ids, mode, fields }),
+      body: JSON.stringify({ series_ids: ids, mode, fields, rename: selectedRenameMode() }),
     });
     const res = await resp.json().catch(() => ({}));
     if (!resp.ok) {
@@ -2616,7 +2738,8 @@ async function saveMetadata() {
         'warning'
       );
     } else {
-      showToast(`Wrote metadata to ${res.files_written} file(s) across ${res.series_count} series`, 'success');
+      const renamed = res.paths_renamed ? `, renamed ${res.paths_renamed} path(s)` : '';
+      showToast(`Wrote metadata to ${res.files_written} file(s) across ${res.series_count} series${renamed}`, 'success');
     }
     closeMetadataModal();
     exitSelectMode();
@@ -3527,8 +3650,27 @@ document.addEventListener('change', e => {
       const val = row.querySelector('.meta-value');
       val.disabled = !e.target.checked;
       if (e.target.checked) val.focus();
+      // Toggling Series changes what a rename would produce.
+      if (row.dataset.field === 'series') refreshRenamePreview();
     }
   }
+  // Rename controls: the preview must follow every input that feeds it.
+  if (e.target.id === 'metadata-rename-enable') {
+    document.getElementById('metadata-rename-options')
+      .classList.toggle('hidden', !e.target.checked);
+    refreshRenamePreview();
+  }
+  if (e.target.name === 'meta-rename-mode') refreshRenamePreview();
+});
+
+// Editing the series name re-previews, debounced so typing doesn't hammer the
+// endpoint (each call hits Kavita once per selected series).
+let renamePreviewTimer = null;
+document.addEventListener('input', e => {
+  const row = e.target.closest && e.target.closest('.metadata-row[data-field="series"]');
+  if (!row) return;
+  clearTimeout(renamePreviewTimer);
+  renamePreviewTimer = setTimeout(refreshRenamePreview, 400);
 });
 
 // Cover-image fallback (replaces inline onerror=). 'error' events don't

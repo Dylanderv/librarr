@@ -15,3 +15,6 @@ package.json
 # e2e test artifacts
 .pytest_cache/
 __pycache__/
+
+# macOS
+.DS_Store
