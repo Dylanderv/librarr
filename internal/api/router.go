@@ -198,6 +198,7 @@ func (s *Server) registerRoutes() {
 	s.registerSearchRoutes()
 	s.registerDownloadRoutes()
 	s.registerLibraryRoutes()
+	s.registerFilesRoutes()
 	s.registerRequestRoutes()
 	s.registerCurationRoutes()
 	s.registerAdminRoutes()
@@ -350,6 +351,16 @@ func (s *Server) registerLibraryRoutes() {
 	s.mux.HandleFunc("GET /api/authors", s.handleListMonitoredAuthors)
 	s.mux.HandleFunc("POST /api/authors/monitor", requireAdmin(s.handleAddMonitoredAuthor))
 	s.mux.HandleFunc("DELETE /api/authors/{id}", requireAdmin(s.handleDeleteMonitoredAuthor))
+}
+
+// registerFilesRoutes wires the filesystem-backed library browser.
+//
+// Admin-only, like /api/library/metadata/*: these endpoints expose the server's
+// directory tree, which is strictly more revealing than the metadata editor
+// they will feed, so they cannot be looser.
+func (s *Server) registerFilesRoutes() {
+	s.mux.HandleFunc("GET /api/files/roots", requireAdmin(s.handleFilesRoots))
+	s.mux.HandleFunc("GET /api/files/list", requireAdmin(s.handleFilesList))
 }
 
 // registerRequestRoutes wires the book request workflow and notifications.

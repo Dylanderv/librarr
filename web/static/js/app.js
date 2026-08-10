@@ -8,6 +8,7 @@ const I18N = {
     // Navigation
     nav_search: 'Search',
     nav_library: 'Library',
+    nav_browse: 'Browse',
     nav_downloads: 'Downloads',
     nav_wishlist: 'Wishlist',
     nav_settings: 'Settings',
@@ -262,6 +263,26 @@ const I18N = {
     // Flibusta / Z-Library config display
     flibusta_enabled: 'Flibusta',
     zlibrary_enabled: 'Z-Library',
+    // Browse (filesystem library browser)
+    browse_title: 'Browse',
+    // Library names are translated from the root id, never from the label the
+    // API returns — that label is only a fallback for an unknown id.
+    browse_root_manga: 'Manga',
+    browse_root_ebooks: 'Ebooks',
+    browse_root_audiobooks: 'Audiobooks',
+    browse_no_roots: 'No library configured',
+    browse_no_roots_hint: 'Set MANGA_DIR, EBOOK_DIR or AUDIOBOOK_DIR to browse your files',
+    browse_empty_dir: 'This folder is empty',
+    browse_load_failed: 'Failed to load this folder',
+    browse_roots_failed: 'Failed to load libraries',
+    browse_parent: 'Parent folder',
+    browse_folder: 'Folder',
+    browse_kind_cbz: 'CBZ',
+    browse_kind_epub: 'EPUB',
+    browse_kind_pdf: 'PDF',
+    browse_kind_cbr: 'CBR',
+    browse_kind_audio: 'Audio',
+    browse_kind_other: 'File',
   },
   ru: {
     // Navigation
@@ -560,6 +581,8 @@ function refreshDynamicContent() {
     refreshDownloads();
   } else if (tab === 'library') {
     loadLibrary();
+  } else if (tab === 'browse') {
+    loadBrowse();
   } else if (tab === 'wishlist') {
     loadWishlist();
   } else if (tab === 'settings') {
@@ -593,6 +616,10 @@ const state = {
   resultsByKey: new Map(),     // stable result key -> result (replaces data-idx)
   libraryPage: 1,
   libraryPages: 1,
+  // Browse tab (filesystem browser, /api/files/*).
+  browseRoots: [],
+  browseRootId: null,
+  browsePath: null,
   // Bulk metadata selection (manga/Kavita tab only).
   selectMode: false,
   selectedSeries: new Map(), // Kavita series id -> name
@@ -1054,6 +1081,7 @@ function switchTab(tab) {
 
   // Load data for the tab
   if (tab === 'library') loadLibrary();
+  if (tab === 'browse') loadBrowse();
   if (tab === 'downloads') { refreshDownloads(); startDownloadPolling(); }
   else stopDownloadPolling();
   if (tab === 'wishlist') loadWishlist();
@@ -3505,6 +3533,230 @@ async function loadStats() {
 }
 
 // ============================================================
+// BROWSE TAB (filesystem library browser)
+// ============================================================
+// Backed by /api/files/*, which reads the disk directly — unlike the Library
+// tab, nothing here goes through Kavita. One directory per request, so the UI
+// never waits on a recursive walk of an NFS share.
+//
+// Rows are built with DOM APIs rather than HTML strings: file names come from
+// the filesystem and may contain quotes, which escapeHtml() does not escape and
+// which would break out of an attribute.
+
+const BROWSE_FOLDER_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
+const BROWSE_FILE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>';
+const BROWSE_UP_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>';
+
+// Kinds this build knows how to label; anything else falls back to "other".
+const BROWSE_KINDS = new Set(['cbz', 'epub', 'pdf', 'cbr', 'audio', 'other']);
+
+// Library names are translated from the stable root id; the API's label is only
+// a fallback for an id this build does not know about.
+function browseRootLabel(root) {
+  const key = `browse_root_${root.id}`;
+  const label = t(key);
+  return label === key ? (root.label || root.id) : label;
+}
+
+async function loadBrowse() {
+  hideBrowseError();
+  try {
+    const data = await apiJson('/api/files/roots');
+    state.browseRoots = data.roots || [];
+  } catch (err) {
+    state.browseRoots = [];
+    showBrowseError(t('browse_roots_failed'));
+  }
+
+  renderBrowseRoots();
+  document.getElementById('browse-no-roots').classList.toggle('hidden', state.browseRoots.length > 0);
+  if (state.browseRoots.length === 0) {
+    clearBrowseListing();
+    return;
+  }
+
+  // Keep the folder we were in across tab switches, as long as its library is
+  // still configured.
+  const known = state.browseRoots.some(r => r.id === state.browseRootId);
+  if (!known || !state.browsePath) {
+    state.browseRootId = state.browseRoots[0].id;
+    state.browsePath = state.browseRoots[0].path;
+  }
+  await openBrowsePath(state.browsePath);
+}
+
+function selectBrowseRoot(id) {
+  const root = state.browseRoots.find(r => r.id === id);
+  if (!root) return;
+  state.browseRootId = root.id;
+  openBrowsePath(root.path);
+}
+
+async function openBrowsePath(path) {
+  hideBrowseError();
+  let data;
+  try {
+    data = await apiJson(`/api/files/list?path=${encodeURIComponent(path)}`);
+  } catch (err) {
+    // A folder that vanished (renamed, deleted) must not leave the tab stuck on
+    // a dead path: fall back to the library root.
+    const root = state.browseRoots.find(r => r.id === state.browseRootId);
+    if (root && path !== root.path) {
+      state.browsePath = root.path;
+      await openBrowsePath(root.path);
+    }
+    showBrowseError(t('browse_load_failed'));
+    return;
+  }
+
+  state.browseRootId = data.root;
+  state.browsePath = data.path;
+  renderBrowseRoots();
+  renderBrowseBreadcrumb(data);
+  renderBrowseEntries(data);
+}
+
+function renderBrowseRoots() {
+  const wrap = document.getElementById('browse-roots');
+  wrap.innerHTML = '';
+  state.browseRoots.forEach(root => {
+    const btn = document.createElement('button');
+    btn.className = 'px-4 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ' +
+      (root.id === state.browseRootId ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white');
+    btn.dataset.action = 'browseRoot';
+    btn.dataset.arg = root.id;
+    btn.textContent = browseRootLabel(root);
+    wrap.appendChild(btn);
+  });
+}
+
+function renderBrowseBreadcrumb(data) {
+  const nav = document.getElementById('browse-breadcrumb');
+  nav.innerHTML = '';
+  const segments = data.segments || [];
+  const rootMeta = state.browseRoots.find(r => r.id === data.root)
+    || { id: data.root, label: data.root_label };
+  nav.appendChild(browseCrumb(browseRootLabel(rootMeta), data.root_path, segments.length === 0));
+  segments.forEach((seg, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'text-slate-600';
+    sep.textContent = '/';
+    nav.appendChild(sep);
+    nav.appendChild(browseCrumb(seg.name, seg.path, i === segments.length - 1));
+  });
+}
+
+function browseCrumb(label, path, isCurrent) {
+  if (isCurrent) {
+    const span = document.createElement('span');
+    span.className = 'text-slate-200 font-medium';
+    span.textContent = label;
+    return span;
+  }
+  const btn = document.createElement('button');
+  btn.className = 'text-indigo-400 hover:text-indigo-300 transition-colors';
+  btn.dataset.action = 'browseOpen';
+  btn.dataset.path = path;
+  btn.textContent = label;
+  return btn;
+}
+
+function clearBrowseListing() {
+  document.getElementById('browse-breadcrumb').innerHTML = '';
+  document.getElementById('browse-list').innerHTML = '';
+  document.getElementById('browse-empty').classList.add('hidden');
+}
+
+function renderBrowseEntries(data) {
+  const list = document.getElementById('browse-list');
+  list.innerHTML = '';
+  const entries = data.entries || [];
+  document.getElementById('browse-empty').classList.toggle('hidden', entries.length > 0);
+
+  if (data.parent) {
+    list.appendChild(browseRow({ name: '..', is_dir: true }, data.parent, true));
+  }
+  entries.forEach(entry => {
+    list.appendChild(browseRow(entry, browseJoin(data.path, entry.name), false));
+  });
+}
+
+// The API returns POSIX paths (the server runs on Linux); a child path is the
+// directory plus its entry name.
+function browseJoin(dir, name) {
+  return dir.endsWith('/') ? dir + name : `${dir}/${name}`;
+}
+
+function browseRow(entry, targetPath, isParent) {
+  const clickable = entry.is_dir;
+  const row = document.createElement(clickable ? 'button' : 'div');
+  row.className = 'w-full flex items-center gap-3 px-4 py-2.5 text-left'
+    + (clickable ? ' hover:bg-slate-800/60 transition-colors' : '');
+  if (clickable) {
+    row.dataset.action = 'browseOpen';
+    row.dataset.path = targetPath;
+  }
+
+  const icon = document.createElement('span');
+  icon.className = 'shrink-0 ' + (entry.is_dir ? 'text-amber-400/80' : 'text-slate-500');
+  icon.innerHTML = isParent ? BROWSE_UP_ICON : (entry.is_dir ? BROWSE_FOLDER_ICON : BROWSE_FILE_ICON);
+  row.appendChild(icon);
+
+  const name = document.createElement('span');
+  name.className = 'flex-1 min-w-0 truncate text-sm ' + (entry.is_dir ? 'text-slate-100' : 'text-slate-300');
+  name.textContent = isParent ? t('browse_parent') : entry.name;
+  row.appendChild(name);
+
+  if (isParent) return row;
+
+  const meta = document.createElement('span');
+  meta.className = 'shrink-0 flex items-center gap-3 text-xs text-slate-500';
+  if (!entry.is_dir) {
+    meta.appendChild(browseKindBadge(entry));
+    const size = document.createElement('span');
+    size.className = 'hidden sm:inline tabular-nums';
+    size.textContent = formatSize(entry.size || 0);
+    meta.appendChild(size);
+  }
+  const modified = document.createElement('span');
+  modified.className = 'hidden md:inline tabular-nums';
+  modified.textContent = formatBrowseDate(entry.modified);
+  meta.appendChild(modified);
+  row.appendChild(meta);
+
+  return row;
+}
+
+function browseKindBadge(entry) {
+  const badge = document.createElement('span');
+  const kind = BROWSE_KINDS.has(entry.kind) ? entry.kind : 'other';
+  // Editable formats (CBZ, EPUB) are highlighted: they are the ones the coming
+  // metadata editor will accept.
+  badge.className = 'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide '
+    + (entry.editable
+      ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+      : 'bg-slate-700/40 text-slate-400 border border-slate-600/40');
+  badge.textContent = t(`browse_kind_${kind}`);
+  return badge;
+}
+
+function formatBrowseDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+}
+
+function showBrowseError(message) {
+  const el = document.getElementById('browse-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function hideBrowseError() {
+  document.getElementById('browse-error').classList.add('hidden');
+}
+
+// ============================================================
 // UTILITIES
 // ============================================================
 function escapeHtml(str) {
@@ -3577,6 +3829,8 @@ const CLICK_ACTIONS = {
   switchTab: el => switchTab(el.dataset.arg),
   switchSearchTab: el => switchSearchTab(el.dataset.arg),
   switchLibraryTab: el => switchLibraryTab(el.dataset.arg),
+  browseRoot: el => selectBrowseRoot(el.dataset.arg),
+  browseOpen: el => openBrowsePath(el.dataset.path),
   setSortMode: el => setSortMode(el.dataset.arg),
   setViewLayout: el => setViewLayout(el.dataset.arg),
   setViewGroup: el => setViewGroup(el.dataset.arg),

@@ -74,7 +74,7 @@ Indépendant du reste du chantier.
 
 ## Étape 2 — Navigation (backend + onglet front)
 
-**Statut : à faire**
+**Statut : terminé**
 
 - `GET /api/files/roots` — les bibliothèques configurées et existantes.
 - `GET /api/files/list?path=…` — un seul `os.ReadDir`, jamais récursif. Par

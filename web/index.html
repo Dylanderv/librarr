@@ -239,6 +239,9 @@
         <button data-action="switchTab" data-arg="library" class="nav-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors whitespace-nowrap" data-tab="library">
           <svg class="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/></svg><span data-i18n="nav_library">Library</span>
         </button>
+        <button data-action="switchTab" data-arg="browse" class="nav-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors whitespace-nowrap" data-tab="browse">
+          <svg class="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg><span data-i18n="nav_browse">Browse</span>
+        </button>
         <button data-action="switchTab" data-arg="downloads" class="nav-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors whitespace-nowrap relative" data-tab="downloads">
           <svg class="w-4 h-4 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg><span data-i18n="nav_downloads">Downloads</span>
           <span id="dl-badge" class="hidden ml-1 px-1.5 py-0.5 text-xs bg-indigo-600 text-white rounded-full"></span>
@@ -348,6 +351,31 @@
       </div>
       <div id="library-results" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
       <div id="library-pagination" class="hidden flex items-center justify-center gap-2 mt-6"></div>
+    </div>
+
+    <!-- ==================== BROWSE TAB ==================== -->
+    <!-- Filesystem-backed library browser: one directory at a time, served by
+         /api/files/*. Independent of Kavita, unlike the Library tab above. -->
+    <div id="tab-browse" class="tab-content">
+      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <h2 class="text-xl font-bold text-white" data-i18n="browse_title">Browse</h2>
+        <div id="browse-roots" class="flex gap-2 overflow-x-auto pb-1"></div>
+      </div>
+
+      <div id="browse-no-roots" class="hidden text-center py-16">
+        <h2 class="text-2xl font-bold text-white mb-2" data-i18n="browse_no_roots">No library configured</h2>
+        <p class="text-slate-400" data-i18n="browse_no_roots_hint">Set MANGA_DIR, EBOOK_DIR or AUDIOBOOK_DIR to browse your files</p>
+      </div>
+
+      <nav id="browse-breadcrumb" class="flex items-center flex-wrap gap-1 text-sm text-slate-400 mb-3"></nav>
+
+      <div id="browse-error" class="hidden mb-3 px-4 py-2.5 rounded-lg bg-red-900/40 border border-red-600/40 text-sm text-red-200"></div>
+
+      <div id="browse-empty" class="hidden text-center py-12">
+        <p class="text-slate-400" data-i18n="browse_empty_dir">This folder is empty</p>
+      </div>
+
+      <div id="browse-list" class="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden divide-y divide-slate-800"></div>
     </div>
 
     <!-- ==================== DOWNLOADS TAB ==================== -->
@@ -750,6 +778,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260722"></script>
+<script src="/static/js/app.js?v=20260810"></script>
 </body>
 </html>
