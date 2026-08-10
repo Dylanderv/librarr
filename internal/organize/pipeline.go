@@ -47,7 +47,7 @@ func (o *Organizer) OrganizeEbook(filePath, title, author string) (string, error
 	safeTitle := sanitizePath(title, 80)
 
 	destDir := filepath.Join(o.cfg.EbookDir, safeAuthor, safeTitle)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		return filePath, err
 	}
 
@@ -61,9 +61,9 @@ func (o *Organizer) OrganizeEbook(filePath, title, author string) (string, error
 	// Also copy to Kavita ebook library if configured.
 	if o.cfg.KavitaLibraryPath != "" {
 		kavitaDir := filepath.Join(o.cfg.KavitaLibraryPath, safeAuthor, safeTitle)
-		if err := os.MkdirAll(kavitaDir, 0755); err == nil {
+		if err := os.MkdirAll(kavitaDir, 0o777); err == nil {
 			kavitaDest := filepath.Join(kavitaDir, filepath.Base(destPath))
-			if err := copyFileForOrg(destPath, kavitaDest); err != nil {
+			if err := copyFile(destPath, kavitaDest); err != nil {
 				slog.Warn("copy to kavita ebook library failed", "error", err)
 			} else {
 				slog.Info("copied to kavita ebook library", "path", kavitaDest)
@@ -104,7 +104,7 @@ func (o *Organizer) OrganizeAudiobook(filePath, title, author string) (string, e
 		return destDir, nil
 	}
 
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		return filePath, err
 	}
 
@@ -125,7 +125,7 @@ func (o *Organizer) OrganizeManga(filePath, seriesTitle string) (string, error) 
 
 	safeTitle := cleanSeriesTitle(seriesTitle)
 	destDir := filepath.Join(o.cfg.MangaDir, safeTitle)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		return filePath, err
 	}
 
@@ -158,7 +158,7 @@ func (o *Organizer) OrganizeManga(filePath, seriesTitle string) (string, error) 
 	// Also copy to Kavita manga library if configured.
 	if o.cfg.KavitaMangaLibraryPath != "" {
 		kavitaDir := filepath.Join(o.cfg.KavitaMangaLibraryPath, safeTitle)
-		if err := os.MkdirAll(kavitaDir, 0755); err == nil {
+		if err := os.MkdirAll(kavitaDir, 0o777); err == nil {
 			resultInfo, err := os.Stat(resultPath)
 			if err == nil {
 				if resultInfo.IsDir() {
@@ -166,11 +166,11 @@ func (o *Organizer) OrganizeManga(filePath, seriesTitle string) (string, error) 
 					for _, entry := range entries {
 						src := filepath.Join(resultPath, entry.Name())
 						dst := filepath.Join(kavitaDir, entry.Name())
-						_ = copyFileForOrg(src, dst)
+						_ = copyFile(src, dst)
 					}
 				} else {
 					dst := filepath.Join(kavitaDir, filepath.Base(resultPath))
-					_ = copyFileForOrg(resultPath, dst)
+					_ = copyFile(resultPath, dst)
 				}
 				slog.Info("copied to kavita manga library", "path", kavitaDir)
 			}
@@ -226,19 +226,16 @@ func moveFile(src, dst string) error {
 		return nil
 	}
 
-	// Fall back to copy + delete.
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(dst, data, 0644); err != nil {
+	// Fall back to copy + delete. This is the cross-device path, so it is the
+	// one that sees the largest files — stream rather than buffer.
+	if err := copyFile(src, dst); err != nil {
 		return err
 	}
 	return os.Remove(src)
 }
 
 func moveDirTree(srcDir, dstDir string) error {
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
+	if err := os.MkdirAll(dstDir, 0o777); err != nil {
 		return err
 	}
 
@@ -260,10 +257,10 @@ func moveDirTree(srcDir, dstDir string) error {
 
 		dstPath := filepath.Join(dstDir, rel)
 		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0755)
+			return os.MkdirAll(dstPath, 0o777)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0o777); err != nil {
 			return err
 		}
 		return moveFile(path, dstPath)
@@ -275,8 +272,10 @@ func moveDirTree(srcDir, dstDir string) error {
 	return os.RemoveAll(srcDir)
 }
 
-// copyFileForOrg copies a file without removing the source.
-func copyFileForOrg(src, dst string) error {
+// copyFile streams a file to dst without removing the source. The destination
+// is created with os.Create's 0666, so the effective mode is decided by the
+// process umask and any ACL inherited from the destination directory.
+func copyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -289,6 +288,8 @@ func copyFileForOrg(src, dst string) error {
 	}
 	defer dstFile.Close()
 
-	_, err = io.Copy(dstFile, srcFile)
-	return err
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return err
+	}
+	return dstFile.Close()
 }

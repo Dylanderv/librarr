@@ -62,7 +62,7 @@ func (lt *LibraryTargets) copyToCalibre(filePath, title, author string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.CalibreLibraryPath, sanitizePath(author, 80), sanitizePath(title, 80))
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		slog.Error("create calibre dir failed", "error", err)
 		return
 	}
@@ -85,7 +85,7 @@ func (lt *LibraryTargets) copyToKavitaEbook(filePath, title, author string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.KavitaLibraryPath, sanitizePath(author, 80), sanitizePath(title, 80))
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		slog.Error("create kavita ebook dir failed", "error", err)
 		return
 	}
@@ -105,7 +105,7 @@ func (lt *LibraryTargets) copyToKavitaManga(filePath, seriesTitle string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.KavitaMangaLibraryPath, sanitizePath(seriesTitle, 80))
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		slog.Error("create kavita manga dir failed", "error", err)
 		return
 	}
@@ -180,7 +180,7 @@ func (lt *LibraryTargets) copyToKomga(filePath, seriesTitle string) {
 
 	safeTitle := sanitizePath(seriesTitle, 80)
 	destDir := filepath.Join(lt.cfg.KomgaLibraryPath, safeTitle)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o777); err != nil {
 		slog.Error("create komga dir failed", "error", err)
 		return
 	}
@@ -340,12 +340,4 @@ func (lt *LibraryTargets) ABSCleanupDuplicateEbooks(title string) {
 			slog.Info("abs duplicate removed", "title", title, "item_id", data.Results[i].ID)
 		}
 	}
-}
-
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0644)
 }

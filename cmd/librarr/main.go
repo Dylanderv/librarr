@@ -30,6 +30,9 @@ func main() {
 
 	slog.Info("starting Librarr", "version", version.Version)
 
+	// Set the process umask before anything touches the filesystem.
+	applyUmask()
+
 	// Load configuration.
 	cfg := config.Load()
 

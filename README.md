@@ -183,6 +183,24 @@ All configuration is via environment variables. Every variable has a sensible de
 | `LIBRARR_PORT` | `5050` | HTTP listen port |
 | `LIBRARR_DB_PATH` | `/data/librarr.db` | SQLite database path |
 | `SETTINGS_FILE` | `/data/settings.json` | Persistent settings file |
+| `UMASK` | | Octal umask applied to imported files and directories (e.g. `002`). See [File permissions](#file-permissions). |
+
+### File permissions
+
+Librarr creates imported files and directories with permissive modes (`0666`/`0777`)
+and lets the process umask narrow them, the same convention as the linuxserver.io
+`*arr` images. This matters when another service has to read or write the same files:
+
+- `UMASK=002` → `0775` directories, `0664` files. Anything in the shared group can
+  write. The usual choice when librarr and Kavita/Komga/Calibre run as different
+  users but share a group.
+- `UMASK=000` → defers entirely to whatever ACL the destination inherits. Useful on
+  NAS shares (Synology, unRAID) that already apply an inheritable ACL — a stricter
+  mode from librarr would only cap it.
+- Unset → the container's default (`022`), i.e. read-only for group and others.
+
+If the media server cannot open what librarr imports, this is almost always the
+knob to turn — not a `chown`.
 
 ### Authentication
 

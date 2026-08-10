@@ -455,7 +455,7 @@ func (d *DirectDownloader) downloadFileAttempt(client *http.Client, fileURL, tit
 
 	// Save to incoming directory.
 	safeTitle := sanitizeFilename(title, 80)
-	if err := os.MkdirAll(d.cfg.IncomingDir, 0755); err != nil {
+	if err := os.MkdirAll(d.cfg.IncomingDir, 0o777); err != nil {
 		return "", 0, fmt.Errorf("create incoming dir: %w", err)
 	}
 

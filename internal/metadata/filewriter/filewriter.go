@@ -153,9 +153,13 @@ func rewriteZip(path string, replace map[string][]byte, add map[string][]byte) e
 		return fmt.Errorf("close temp: %w", err)
 	}
 
-	// Match the original file mode where possible.
+	// os.CreateTemp opens at 0600, which would leave the rewritten file
+	// unreadable by the media server. Match the original file mode; if it cannot
+	// be read, fall back to something readable rather than keeping 0600.
 	if info, err := os.Stat(path); err == nil {
 		os.Chmod(tmpName, info.Mode())
+	} else {
+		os.Chmod(tmpName, 0o644)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("rename temp over original: %w", err)

@@ -15,6 +15,11 @@ services:
     environment:
       - LIBRARR_PORT=5050
       - LIBRARR_DB_PATH=/data/librarr.db
+      # Permissions on imported files. Librarr creates files/dirs permissively
+      # (0666/0777) and lets the umask narrow them, so companion services
+      # (Kavita, Komga, Calibre) can read and write what it imports.
+      # 002 = group-writable; 000 = defer entirely to the storage ACL.
+      - UMASK=002
       - WISHLIST_CLEANUP_ENABLED=false
       - WISHLIST_CLEANUP_INTERVAL_HOURS=12
       - WISHLIST_CLEANUP_DRY_RUN=true
