@@ -40,7 +40,7 @@ pas les remettre en cause sans le lui demander.
 
 ## Étape 0 — Les deux bugs bloquants
 
-**Statut : à faire**
+**Statut : terminé**
 
 - `internal/rename/rename.go` — `VolumeNumber` : normaliser `_` et `.` en espaces
   avant de matcher (après le `TrimSuffix` de l'extension, donc sans risque pour

@@ -193,7 +193,10 @@ func (s *Server) applyMetadataToSeries(ctx context.Context, client *kavita.Clien
 		res.FilesWritten++
 	}
 
-	if renameMode != rename.ModeNone && res.FilesWritten > 0 {
+	// Renaming does not depend on the metadata write: a series made only of PDFs
+	// writes nothing (filewriter cannot patch them) yet renaming is the one lever
+	// that fixes how Kavita names it.
+	if renameMode != rename.ModeNone {
 		plan := s.buildRenamePlan(ctx, client, id, *fields.Series, renameMode)
 		res.Errors = append(res.Errors, plan.Errors...)
 		for _, skipped := range plan.Plan.Skipped {
@@ -206,8 +209,9 @@ func (s *Server) applyMetadataToSeries(ctx context.Context, client *kavita.Clien
 		}
 	}
 
-	// Only rescan if we actually changed something.
-	if res.FilesWritten > 0 {
+	// Only rescan if we actually changed something — renamed paths count, a
+	// PDF-only series changed on disk without a single byte of metadata written.
+	if res.FilesWritten > 0 || res.PathsRenamed > 0 {
 		libraryID := 0
 		if sr, err := client.SeriesForID(ctx, id); err == nil {
 			libraryID = sr.LibraryID

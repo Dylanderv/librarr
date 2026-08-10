@@ -87,6 +87,12 @@ func VolumeNumber(name string) (int, bool) {
 	// Bracketed groups hold release metadata ([2024], [TONER]) whose digits are
 	// not volume numbers.
 	stem = bracketRe.ReplaceAllString(stem, " ")
+	// Torrent-derived names separate words with "_" or ".", which defeats the
+	// word boundaries below: "_" is a word character, so "\bt" never matches in
+	// "Boruto_Two_Blue_Vortex_T4". Normalising to spaces is safe because the
+	// extension is already gone and every pattern tolerates a space where it
+	// used to see a dot ("Vol.03" becomes "Vol 03").
+	stem = separatorRe.ReplaceAllString(stem, " ")
 
 	for _, re := range volumePatterns {
 		if m := re.FindStringSubmatch(stem); m != nil {
@@ -100,6 +106,7 @@ func VolumeNumber(name string) (int, bool) {
 
 var (
 	bracketRe    = regexp.MustCompile(`[\[\(][^\]\)]*[\]\)]`)
+	separatorRe  = regexp.MustCompile(`[._]+`)
 	unsafeRe     = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 	whitespaceRe = regexp.MustCompile(`\s+`)
 )

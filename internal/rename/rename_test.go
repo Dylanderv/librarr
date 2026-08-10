@@ -24,6 +24,13 @@ func TestVolumeNumber(t *testing.T) {
 		{"Inio.Asano.Anthology.OS.Asano.FR.[CBZ]-TONER-Paprika+.cbz", 0, false},
 		{"Some Series [2024] (Digital).cbz", 0, false},
 		{"no digits at all.cbz", 0, false},
+		// Torrent-style separators: "_" and "." must not hide the volume marker.
+		{"Boruto_Two_Blue_Vortex_T4.pdf", 4, true},
+		{"Berserk.Vol.03.cbz", 3, true},
+		{"Choujin.X.v03.cbz", 3, true},
+		{"Some_Series_Tome_11.epub", 11, true},
+		// Non-regression: the year guard still holds with dotted separators.
+		{"Dead.Dead.Demons.DeDeDeDe.Destruction.2001.cbz", 0, false},
 	}
 
 	for _, tc := range tests {

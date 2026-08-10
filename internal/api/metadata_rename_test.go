@@ -1,11 +1,17 @@
 package api
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/kavita"
+	"github.com/JeremiahM37/librarr/internal/metadata/filewriter"
 	"github.com/JeremiahM37/librarr/internal/rename"
 )
 
@@ -119,6 +125,53 @@ func TestApplyRenamePlanFolderOnlyKeepsFileNames(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "Series", "weird name v1.cbz")); err != nil {
 		t.Errorf("file should have moved with the folder, unrenamed: %v", err)
+	}
+}
+
+// TestApplyMetadataToSeriesRenamesPDFOnlySeries covers the case that motivated
+// decoupling the rename from the metadata write: filewriter cannot patch a PDF,
+// so a PDF-only series writes zero files — yet renaming is exactly what makes
+// Kavita name it correctly, and the rescan must still run.
+func TestApplyMetadataToSeriesRenamesPDFOnlySeries(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, "Boruto_Two_Blue_Vortex_FR")
+	mustWrite(t, filepath.Join(old, "Boruto_Two_Blue_Vortex_T4.pdf"))
+
+	scanned := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/Account/login":
+			_, _ = w.Write([]byte(`{"token":"t"}`))
+		case strings.HasPrefix(r.URL.Path, "/api/Series/volumes"):
+			_, _ = w.Write([]byte(`[{"chapters":[{"files":[{"filePath":"` +
+				filepath.ToSlash(filepath.Join(old, "Boruto_Two_Blue_Vortex_T4.pdf")) + `"}]}]}]`))
+		case r.URL.Path == "/api/Series/scan":
+			scanned = true
+			_, _ = w.Write([]byte(`{}`))
+		default: // /api/Series/{id}
+			_, _ = w.Write([]byte(`{"id":1,"libraryId":2}`))
+		}
+	}))
+	defer srv.Close()
+
+	s := renameTestServer(t, root)
+	series := "Boruto Two Blue Vortex"
+	res := s.applyMetadataToSeries(context.Background(), kavita.New(srv.URL, "u", "p"), 1,
+		filewriter.Fields{Series: &series}, rename.ModeFolderAndFiles)
+
+	if res.FilesWritten != 0 {
+		t.Fatalf("FilesWritten = %d, want 0 (a PDF cannot be written)", res.FilesWritten)
+	}
+	// One folder plus one file.
+	if res.PathsRenamed != 2 {
+		t.Errorf("PathsRenamed = %d, want 2: %v", res.PathsRenamed, res.Errors)
+	}
+	want := filepath.Join(root, series, series+" Vol.04.pdf")
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("missing %s: %v", want, err)
+	}
+	if !scanned || !res.Rescanned {
+		t.Errorf("a renamed series must be rescanned (scanned=%v, Rescanned=%v)", scanned, res.Rescanned)
 	}
 }
 
