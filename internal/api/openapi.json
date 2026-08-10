@@ -65,6 +65,33 @@
           "media_type": {"type": "string", "enum": ["ebook", "audiobook", "manga"]}
         }
       },
+      "FileMetadataFields": {
+        "type": "object",
+        "description": "Metadata of one file as read from its ComicInfo.xml (CBZ) or OPF (EPUB). Absent and empty are the same thing here.",
+        "properties": {
+          "title":        {"type": "string"},
+          "series":       {"type": "string"},
+          "series_index": {"type": "string"},
+          "summary":      {"type": "string"},
+          "publisher":    {"type": "string"},
+          "language":     {"type": "string"},
+          "isbn":         {"type": "string"},
+          "authors":      {"type": "array", "items": {"type": "string"}},
+          "genres":       {"type": "array", "items": {"type": "string"}},
+          "tags":         {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "FileMetadataRequest": {
+        "type": "object",
+        "description": "Payload shared by /api/files/metadata/preview and /api/files/metadata/apply — applying is 'preview again, then act', not a second code path.",
+        "required": ["path", "fields"],
+        "properties": {
+          "path":      {"type": "string", "description": "Absolute path of a file or a folder under a library root"},
+          "recursive": {"type": "boolean", "default": false, "description": "Folders only: also cover subfolders"},
+          "mode":      {"type": "string", "enum": ["set", "append"], "default": "set", "description": "Only affects the list fields (authors, genres, tags); scalars are always replaced"},
+          "fields":    {"allOf": [{"$ref": "#/components/schemas/FileMetadataFields"}], "description": "Only the fields present are written. title, series_index and isbn identify a single volume and are refused when path is a folder."}
+        }
+      },
       "PaginatedList": {
         "type": "object",
         "description": "Standard list response shape used across /api/library, /api/activity, etc.",
@@ -184,6 +211,129 @@
     "/api/library/audiobook/{id}": {"delete": {"summary": "Remove an audiobook", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]}},
     "/api/library/{id}/tags":      {"get":  {"summary": "List tags for a library item"}, "post": {"summary": "Add a tag to a library item"}},
     "/api/library/{id}/tags/{tagId}": {"delete": {"summary": "Remove a tag from a library item"}},
+
+    "/api/files/roots": {
+      "get": {
+        "summary": "List the browsable library roots — MANGA_DIR / EBOOK_DIR / AUDIOBOOK_DIR, keeping only directories that exist (admin)",
+        "description": "Entry point of the /api/files/* surface, which browses the filesystem directly and never queries Kavita. Every other /api/files/* path takes an absolute path that must sit under one of these roots.",
+        "responses": {
+          "200": {"description": "Configured libraries", "content": {"application/json": {"schema": {"type": "object", "properties": {"roots": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "enum": ["manga", "ebooks", "audiobooks"]}, "label": {"type": "string"}, "path": {"type": "string", "description": "Absolute path with symlinks resolved"}}}}, "kavita": {"type": "boolean", "description": "Whether POST /api/files/kavita/scan is usable on this instance"}}}}}}
+        }
+      }
+    },
+    "/api/files/list": {
+      "get": {
+        "summary": "List one directory of one library — a single non-recursive ReadDir (admin)",
+        "description": "Cached in memory for ~30s and invalidated for any folder librarr writes to. No archive is opened: metadata is read on demand through /api/files/metadata.",
+        "parameters": [{"name": "path", "in": "query", "required": true, "schema": {"type": "string"}, "description": "Absolute path of a directory under a library root"}],
+        "responses": {
+          "200": {"description": "Directory listing", "content": {"application/json": {"schema": {"type": "object", "properties": {"root": {"type": "string"}, "root_label": {"type": "string"}, "root_path": {"type": "string"}, "path": {"type": "string"}, "is_root": {"type": "boolean"}, "parent": {"type": "string", "description": "Empty on a library root"}, "segments": {"type": "array", "description": "Breadcrumb below the root", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}}}}, "entries": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "is_dir": {"type": "boolean"}, "size": {"type": "integer"}, "modified": {"type": "string", "format": "date-time"}, "kind": {"type": "string", "enum": ["cbz", "epub", "pdf", "cbr", "audio", "other"], "description": "Empty for directories"}, "editable": {"type": "boolean", "description": "librarr can write metadata into it (CBZ and EPUB only)"}}}}}}}}},
+          "400": {"description": "Path missing, relative, or not a directory"},
+          "403": {"description": "Path outside the configured libraries"},
+          "404": {"description": "Directory not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/rename/preview": {
+      "post": {
+        "summary": "Preview the renaming of a folder and its files, without touching anything (admin)",
+        "description": "Every file of the folder is returned, including those that will not move, so nothing is silently left out. A volume number is never guessed: a file with no detected and no supplied number comes back with status no_volume and is skipped.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "series_name", "mode"], "properties": {"path": {"type": "string", "description": "Absolute path of the folder, never a bare library root"}, "series_name": {"type": "string", "description": "Target series name; the UI pre-fills it with the current folder name"}, "mode": {"type": "string", "enum": ["folder", "folder_and_files"], "description": "Required: an absent or none mode is refused with 400"}, "volumes": {"type": "object", "description": "Manual volume numbers keyed by the file's current base name; overrides detection", "additionalProperties": {"type": "integer"}}}}}}},
+        "responses": {
+          "200": {"description": "Planned renames", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "series_name": {"type": "string"}, "mode": {"type": "string"}, "folder_from": {"type": "string"}, "folder_to": {"type": "string"}, "files": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "volume": {"type": "integer"}, "volume_source": {"type": "string", "enum": ["manual", "detected", "none"]}, "target": {"type": "string"}, "status": {"type": "string", "enum": ["rename", "unchanged", "no_volume", "collision", "folder_only"]}}}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Invalid JSON body, missing series name, missing or unknown rename mode, or path is not a directory"},
+          "403": {"description": "Path outside the libraries, or a bare library root"},
+          "404": {"description": "Folder not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/rename/apply": {
+      "post": {
+        "summary": "Apply the folder/file renaming (admin)",
+        "description": "Same payload as /api/files/rename/preview. The plan is always recomputed server-side from the payload — a plan sent by the client is never applied. If the folder itself cannot be moved, its files are still renamed in place.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "series_name", "mode"], "properties": {"path": {"type": "string"}, "series_name": {"type": "string"}, "mode": {"type": "string", "enum": ["folder", "folder_and_files"]}, "volumes": {"type": "object", "additionalProperties": {"type": "integer"}}}}}}},
+        "responses": {
+          "200": {"description": "Result; per-file failures are collected in errors rather than aborting the batch", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Where the folder now lives, to reopen the listing on"}, "renamed": {"type": "integer"}, "errors": {"type": "array", "items": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Invalid JSON body, missing series name, missing or unknown rename mode, or path is not a directory"},
+          "403": {"description": "Path outside the libraries, or a bare library root"},
+          "404": {"description": "Folder not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/rename/file": {
+      "post": {
+        "summary": "Rename a single file to a free-form name (admin)",
+        "description": "The name is sanitized and the original extension is always kept: a typed \"Berserk.exe\" on a .cbz becomes \"Berserk.exe.cbz\" rather than a file Kavita can no longer read.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "new_name"], "properties": {"path": {"type": "string", "description": "Absolute path of the file"}, "new_name": {"type": "string", "description": "New name, with or without the extension"}}}}}},
+        "responses": {
+          "200": {"description": "Renamed", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}}}}}},
+          "400": {"description": "Invalid JSON body, empty name, unchanged name, or path is a directory"},
+          "403": {"description": "Path outside the libraries, or a bare library root"},
+          "404": {"description": "File not found"},
+          "409": {"description": "A file already has the target name"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/metadata": {
+      "get": {
+        "summary": "Read the metadata one file currently holds (admin)",
+        "description": "Opens the archive, so it is meant to be called when a file panel is opened, not for every row of a listing. A non-editable format (PDF, CBR, audio) answers 200 with editable=false and a reason key rather than an error.",
+        "parameters": [{"name": "path", "in": "query", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "Current metadata", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "reason": {"type": "string", "enum": ["pdf_ignored_by_kavita", "cbr_rar_archive", "audio_unsupported", "format_unsupported"], "description": "Present only when editable is false"}, "fields": {"$ref": "#/components/schemas/FileMetadataFields"}}}}}},
+          "400": {"description": "Path missing, relative, or path is a directory"},
+          "403": {"description": "Path outside the configured libraries"},
+          "404": {"description": "File not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/metadata/preview": {
+      "post": {
+        "summary": "Show what a metadata edit would change, file by file, without writing (admin)",
+        "description": "Values are replaced, not merged (mode append only concerns the list fields), so the preview is what makes the overwrite visible before it happens. title, series_index and isbn identify a single volume and are rejected when path is a directory. At most 500 files are inspected; beyond that truncated is true.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FileMetadataRequest"}}}},
+        "responses": {
+          "200": {"description": "Per-file diff", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "is_dir": {"type": "boolean"}, "recursive": {"type": "boolean"}, "files": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "status": {"type": "string"}, "reason": {"type": "string"}, "error": {"type": "string"}, "changes": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "current": {"type": "string"}, "target": {"type": "string"}, "changed": {"type": "boolean"}}}}}}}, "inspected": {"type": "integer"}, "limit": {"type": "integer"}, "truncated": {"type": "boolean"}, "notices": {"type": "array", "description": "Informational outcomes, never failures", "items": {"type": "object", "properties": {"key": {"type": "string"}, "count": {"type": "integer"}}}}, "errors": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Invalid JSON body, no field supplied, or a per-volume field (title, series_index, isbn) targeted at a directory"},
+          "403": {"description": "Path outside the libraries, or a bare library root"},
+          "404": {"description": "Path not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/metadata/apply": {
+      "post": {
+        "summary": "Write metadata into a file, or into every file of a folder (admin)",
+        "description": "Same payload as /api/files/metadata/preview, recomputed server-side. CBZ get a patched ComicInfo.xml, EPUB a patched OPF; unsupported formats are counted, not failed. A file that fails does not stop the batch — its error is collected.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FileMetadataRequest"}}}},
+        "responses": {
+          "200": {"description": "Result", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "written": {"type": "integer"}, "unchanged": {"type": "integer"}, "unsupported": {"type": "integer"}, "inspected": {"type": "integer"}, "limit": {"type": "integer"}, "truncated": {"type": "boolean"}, "notices": {"type": "array", "items": {"type": "object", "properties": {"key": {"type": "string"}, "count": {"type": "integer"}}}}, "errors": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Invalid JSON body, no field supplied, or a per-volume field targeted at a directory"},
+          "403": {"description": "Path outside the libraries, or a bare library root"},
+          "404": {"description": "Path not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/kavita/scan": {
+      "post": {
+        "summary": "Ask Kavita to rescan its libraries (admin)",
+        "description": "Manual only: no rename or metadata write triggers a scan, so a session of many small edits costs one scan instead of one per edit. SCOPE: the scan is server-wide. root names a library from /api/files/roots and is validated, but it does not narrow the scan — Kavita's per-library scan needs a library id librarr cannot derive from a local root, so the response echoes scope=all.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["root"], "properties": {"root": {"type": "string", "enum": ["manga", "ebooks", "audiobooks"]}}}}}},
+        "responses": {
+          "200": {"description": "Scan requested", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["requested"]}, "root": {"type": "string"}, "scope": {"type": "string", "enum": ["all"], "description": "All Kavita libraries are scanned, not just root"}}}}}},
+          "400": {"description": "Invalid JSON body or missing root"},
+          "404": {"description": "Unknown library root"},
+          "502": {"description": "Kavita refused or could not be reached"},
+          "503": {"description": "Kavita is not configured, or no library directory is configured"}
+        }
+      }
+    },
 
     "/api/wishlist": {
       "get":  {"summary": "List wishlist items"},

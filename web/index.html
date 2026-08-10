@@ -359,7 +359,16 @@
     <div id="tab-browse" class="tab-content">
       <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <h2 class="text-xl font-bold text-white" data-i18n="browse_title">Browse</h2>
-        <div id="browse-roots" class="flex gap-2 overflow-x-auto pb-1"></div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div id="browse-roots" class="flex gap-2 overflow-x-auto pb-1"></div>
+          <!-- Manual only, never fired by an edit: a scan is expensive on NFS
+               and the user decides when a batch of edits is finished. Hidden
+               entirely when Kavita is not configured. -->
+          <button id="browse-scan-btn" data-action="scanBrowseKavita" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span data-i18n="browse_scan">Scan in Kavita</span>
+          </button>
+        </div>
       </div>
 
       <div id="browse-no-roots" class="hidden text-center py-16">
@@ -910,6 +919,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260810c"></script>
+<script src="/static/js/app.js?v=20260810d"></script>
 </body>
 </html>

@@ -283,6 +283,11 @@ const I18N = {
     browse_kind_cbr: 'CBR',
     browse_kind_audio: 'Audio',
     browse_kind_other: 'File',
+    // Browse — manual Kavita scan (never triggered by an edit)
+    browse_scan: 'Scan in Kavita',
+    browse_scan_running: 'Scanning…',
+    browse_scan_done: 'Kavita scan requested (all libraries)',
+    browse_scan_failed: 'Failed to request the Kavita scan',
     // Browse — folder rename with preview
     browse_rename: 'Rename',
     browse_rename_title: 'Rename folder',
@@ -708,6 +713,7 @@ const state = {
   browseRootId: null,
   browsePath: null,
   browseIsRoot: true,
+  browseKavita: false,
   // Rename panel: the folder it was opened on, and the volumes the user typed
   // (file name -> number). Kept out of the DOM so a re-render never loses them.
   renamePath: null,
@@ -3665,12 +3671,18 @@ async function loadBrowse() {
   try {
     const data = await apiJson('/api/files/roots');
     state.browseRoots = data.roots || [];
+    state.browseKavita = !!data.kavita;
   } catch (err) {
     state.browseRoots = [];
+    state.browseKavita = false;
     showBrowseError(t('browse_roots_failed'));
   }
 
   renderBrowseRoots();
+  // No Kavita configured means the endpoint can only answer 503, so the button
+  // is not offered at all rather than shown and failing.
+  document.getElementById('browse-scan-btn').classList
+    .toggle('hidden', !state.browseKavita || state.browseRoots.length === 0);
   document.getElementById('browse-no-roots').classList.toggle('hidden', state.browseRoots.length > 0);
   if (state.browseRoots.length === 0) {
     clearBrowseListing();
@@ -3905,6 +3917,27 @@ function showBrowseError(message) {
 
 function hideBrowseError() {
   document.getElementById('browse-error').classList.add('hidden');
+}
+
+// scanBrowseKavita asks Kavita to re-read the files. Manual by design: renaming
+// and metadata edits never trigger it, so a batch of fixes costs one scan
+// instead of one per edit.
+async function scanBrowseKavita() {
+  if (!state.browseRootId) return;
+  const btn = document.getElementById('browse-scan-btn');
+  const label = btn.querySelector('span');
+  const previous = label.textContent;
+  btn.disabled = true;
+  label.textContent = t('browse_scan_running');
+  try {
+    await postFiles('/api/files/kavita/scan', { root: state.browseRootId });
+    showToast(t('browse_scan_done'), 'success');
+  } catch (err) {
+    showToast(err.message || t('browse_scan_failed'), 'error');
+  } finally {
+    btn.disabled = false;
+    label.textContent = previous;
+  }
 }
 
 // ============================================================
@@ -4647,6 +4680,7 @@ const CLICK_ACTIONS = {
   switchLibraryTab: el => switchLibraryTab(el.dataset.arg),
   browseRoot: el => selectBrowseRoot(el.dataset.arg),
   browseOpen: el => openBrowsePath(el.dataset.path),
+  scanBrowseKavita: () => scanBrowseKavita(),
   openBrowseRename: () => openBrowseRename(),
   closeBrowseRename: () => closeBrowseRename(),
   applyBrowseRename: () => applyBrowseRename(),

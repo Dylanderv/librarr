@@ -299,12 +299,19 @@ func writeLibraryPathError(w http.ResponseWriter, err error) {
 // handleFilesRoots lists the browsable libraries.
 //
 // GET /api/files/roots
+//
+// The kavita flag says whether POST /api/files/kavita/scan is usable at all, so
+// the front end can hide the scan button instead of offering an action that can
+// only answer 503.
 func (s *Server) handleFilesRoots(w http.ResponseWriter, _ *http.Request) {
 	roots := libraryRoots(s.cfg)
 	if roots == nil {
 		roots = []libraryRoot{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"roots": roots})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roots":  roots,
+		"kavita": s.cfg != nil && s.cfg.HasKavita(),
+	})
 }
 
 // handleFilesList lists one directory of one library.

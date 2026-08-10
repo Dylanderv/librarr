@@ -166,7 +166,7 @@ Arbitrages pris pendant l'implémentation :
 
 ## Étape 5 — Kavita, documentation, vérifications finales
 
-**Statut : à faire**
+**Statut : terminé**
 
 - `POST /api/files/kavita/scan` — `{root}` → `ScanLibrary`. Déclenché uniquement
   par un bouton, jamais automatiquement.
@@ -175,6 +175,20 @@ Arbitrages pris pendant l'implémentation :
 - Documenter les nouveaux endpoints dans `internal/api/openapi.json`.
   `README.md` seulement si une variable d'environnement apparaît (a priori aucune).
 - Vérifications complètes, dont le build `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`.
+
+Arbitrage pris pendant l'implémentation :
+
+- **Portée du scan** : `internal/kavita` n'expose que `ScanLibrary` (POST
+  `/api/Library/scan`, sans argument — le même appel que le pipeline d'import) et
+  `ScanSeries`, qui réclame un id de série Kavita que Browse n'a pas. Faire
+  correspondre `MANGA_DIR` à un id de bibliothèque Kavita exigerait de lister les
+  bibliothèques Kavita et d'appliquer `KAVITA_PATH_MAP` à l'envers sur leurs
+  dossiers : rien de tel n'existe ici, et apparier par le nom rescannerait
+  silencieusement la mauvaise bibliothèque. `root` sert donc à valider que la
+  requête vise une bibliothèque réelle, et la réponse annonce `scope: "all"`.
+  **À confirmer** : si un scan ciblé est souhaité, il faut ajouter
+  `Libraries()` + `ScanLibraryByID()` au client Kavita et une résolution inverse
+  de chemin dans `config`.
 
 ---
 

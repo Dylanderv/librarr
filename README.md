@@ -59,6 +59,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 - **Reading history** -- track what you've read with stats (books per month, pages, completion rate)
 - **Tags** -- organize library items with custom tags for filtering and grouping
 - **Series grouping** -- groups related books/volumes in the library view
+- **Browse tab** -- walk your library folders straight from disk, then rename or edit metadata with a preview first (see below)
 - **EPUB verification** -- checks title word overlap to detect wrong-book downloads
 
 ### Notifications and Webhooks
@@ -220,6 +221,27 @@ whose volume number cannot be read are left alone and listed in the preview
 rather than being numbered by guesswork. A folder is never renamed when it is a
 library root, when the target already exists, or when the series' files are
 spread across several directories.
+
+### Browse tab
+
+The **Browse** tab lists your libraries from the filesystem itself — the
+directories set by `MANGA_DIR`, `EBOOK_DIR` and `AUDIOBOOK_DIR` — one folder at a
+time. Nothing is read from Kavita, so a series Kavita has not scanned yet, or
+has temporarily dropped from its listing, is still visible and still editable.
+From there you can rename a folder and its files, rename a single file, and
+write metadata into a file or into every file of a folder; both always show a
+preview before anything is written. PDF, CBR and audio files are listed and can
+be renamed, but their metadata is left alone: no writer exists for them, and
+Kavita ignores PDF metadata anyway.
+
+Kavita is only ever contacted on demand, through the **Scan in Kavita** button,
+which is hidden when Kavita is not configured. No edit triggers a scan by
+itself. Note that the scan covers every Kavita library, not only the one being
+browsed.
+
+For the two tabs to agree, the directories above should overlap the paths Kavita
+serves (`KAVITA_LIBRARY_PATH`, `KAVITA_MANGA_LIBRARY_PATH`, the targets of
+`KAVITA_PATH_MAP`). When they do not, librarr says so once at startup.
 
 ### Authentication
 
@@ -431,6 +453,23 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 | DELETE | `/api/library/audiobook/{id}` | Remove audiobook |
 | GET | `/api/stats` | Library statistics |
 | GET | `/api/activity` | Recent activity log |
+
+### Files (Browse tab, admin)
+
+Filesystem-backed, independent of Kavita. Full payloads and error codes are in
+`/api/openapi.json`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/files/roots` | List the browsable library roots |
+| GET | `/api/files/list` | List one directory (`?path=`) |
+| POST | `/api/files/rename/preview` | Preview a folder + files rename |
+| POST | `/api/files/rename/apply` | Apply it (plan recomputed server-side) |
+| POST | `/api/files/rename/file` | Rename a single file |
+| GET | `/api/files/metadata` | Read one file's metadata (`?path=`) |
+| POST | `/api/files/metadata/preview` | Preview a metadata edit, file by file |
+| POST | `/api/files/metadata/apply` | Write it |
+| POST | `/api/files/kavita/scan` | Ask Kavita to rescan (manual only, all libraries) |
 
 ### Requests
 

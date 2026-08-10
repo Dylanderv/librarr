@@ -78,6 +78,11 @@ func main() {
 
 	searchMgr := search.NewManager(cfg, sources, health)
 
+	// The Browse tab walks MANGA_DIR/EBOOK_DIR/AUDIOBOOK_DIR while the Library
+	// tab works off Kavita's roots. If those two sets are disjoint the tabs show
+	// different books for no visible reason, so say it once at startup.
+	api.WarnLibraryRootDivergence(cfg)
+
 	// Graceful shutdown context (used by background workers).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

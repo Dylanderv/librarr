@@ -367,6 +367,7 @@ func (s *Server) registerFilesRoutes() {
 	s.mux.HandleFunc("GET /api/files/metadata", requireAdmin(s.handleFilesMetadata))
 	s.mux.HandleFunc("POST /api/files/metadata/preview", requireAdmin(s.handleFilesMetadataPreview))
 	s.mux.HandleFunc("POST /api/files/metadata/apply", requireAdmin(s.handleFilesMetadataApply))
+	s.mux.HandleFunc("POST /api/files/kavita/scan", requireAdmin(s.handleFilesKavitaScan))
 }
 
 // registerRequestRoutes wires the book request workflow and notifications.
