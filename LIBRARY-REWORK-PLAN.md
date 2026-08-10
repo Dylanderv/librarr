@@ -194,8 +194,34 @@ Arbitrage pris pendant l'implémentation :
 
 ## Étape 6 — Réparation des tests e2e (dette antérieure)
 
-**Statut : à faire**
+**Statut : terminé**
 
-Les 3 tests Playwright échouent déjà sur `main` (sélecteurs `data-idx`, tri
-ambigu) — ce n'est pas une régression de ce chantier. À réparer dans un commit
-séparé, en fin de parcours, pour ne pas mélanger dette antérieure et code neuf.
+Les 3 tests Playwright échouaient déjà sur `main` (sélecteurs `data-idx`, tri
+ambigu) — ce n'est pas une régression de ce chantier. Échecs reproduits
+localement puis corrigés ; la suite passe désormais en entier (11 tests).
+
+Diagnostic — les trois échecs relèvent de la même catégorie, un test rendu
+obsolète par un refactor antérieur du front. **Aucun bug du front, aucune
+régression du chantier Browse.**
+
+- `data-idx` / `state.renderedResults` n'existent plus : le front identifie un
+  résultat par une clé stable (`data-key` → `state.resultsByKey`, cf. le
+  commentaire de `buildResultsByKey` dans `app.js`). Les trois tests
+  interrogeaient encore l'ancien schéma. Les sondes sont réécrites sur
+  `data-key`, l'invariant testé reste le même : le titre affiché est bien celui
+  du résultat vers lequel pointe le bouton de téléchargement.
+- Tri ambigu : `[data-action="setSortMode"]` matche deux contrôles — les boutons
+  de la barre d'outils (visibles en layout `grid` uniquement) et les en-têtes de
+  colonne du tableau (layout `list`, le défaut). Playwright cliquait le bouton
+  caché. Le test bascule maintenant explicitement de layout et cible le contrôle
+  visible dans chacun — il couvre donc les deux rendus au lieu d'un seul.
+
+Ajouts :
+
+- Test de fumée sur l'onglet Browse : racines affichées, navigation dans un
+  dossier, fichier listé, aucune erreur. Le dossier témoin est semé par la
+  fixture `app` **avant le démarrage du binaire** — `/api/files/list` cache un
+  listing ~30 s, un dossier créé en cours de test pourrait rester invisible.
+- `browse` ajouté à la boucle de `test_all_tabs_switch`.
+
+Aucun code applicatif touché (donc pas de bump de `?v=`).

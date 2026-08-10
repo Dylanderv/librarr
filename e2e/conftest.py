@@ -43,6 +43,11 @@ BOOKS = [
 # capture-phase error handler (gradient placeholder fallback).
 BROKEN_COVER_ID = 103
 
+# A folder + file planted in the ebook library so the Browse tab has real
+# filesystem content to list (see the `app` fixture).
+BROWSE_FIXTURE_DIR = "E2E Browse Series"
+BROWSE_FIXTURE_FILE = "E2E Browse Series Vol.01.cbz"
+
 
 def _free_port() -> int:
     with socket.socket() as s:
@@ -194,6 +199,14 @@ def app(stub_server, librarr_binary, tmp_path_factory):
     incoming = data / "incoming"
     for d in (books, incoming, data / "audiobooks"):
         d.mkdir()
+
+    # Fixture for the Browse tab. Seeded before the server boots: /api/files/list
+    # caches a directory listing for ~30s, so a folder created mid-run could stay
+    # invisible depending on which test opened the tab first.
+    browse_dir = books / BROWSE_FIXTURE_DIR
+    browse_dir.mkdir()
+    # An empty-but-valid zip: enough for the listing, which never opens the file.
+    (browse_dir / BROWSE_FIXTURE_FILE).write_bytes(b"PK\x05\x06" + b"\0" * 18)
 
     env = {
         **os.environ,

@@ -13,6 +13,8 @@ import time
 
 import pytest
 
+from conftest import BROWSE_FIXTURE_DIR, BROWSE_FIXTURE_FILE
+
 
 def active_tab(page):
     return page.evaluate("() => document.querySelector('.tab-content.active')?.id")
@@ -55,13 +57,13 @@ def test_tailwind_and_font_render_offline(ui):
 
 def test_all_tabs_switch(ui):
     page = ui["page"]
-    for tab in ("library", "downloads", "wishlist", "settings", "search"):
+    for tab in ("library", "browse", "downloads", "wishlist", "settings", "search"):
         page.click(f'[data-action="switchTab"][data-arg="{tab}"]')
         page.wait_for_timeout(200)
         assert active_tab(page) == f"tab-{tab}"
 
 
-# ── Search / sort / the data-idx contract ───────────────────────────────────
+# ── Search / sort / the data-key contract ───────────────────────────────────
 
 @pytest.fixture()
 def searched(ui):
@@ -80,28 +82,52 @@ def test_search_renders_stub_results(searched):
     assert "Test Adventure" in body
 
 
-def test_data_idx_maps_to_rendered_result_in_every_sort_mode(searched):
-    """The download button carries data-idx into the *rendered* (sorted) list.
+# The download button carries a stable data-key resolved against
+# state.resultsByKey. This walks every rendered button — card (grid) or table
+# row (list) — and checks the title it shows is the title of the result its key
+# maps to.
+_MAPPING_PROBE = """() =>
+    [...document.querySelectorAll('[data-action="startDownload"]')].map(btn => {
+        const card = btn.closest('.book-card');
+        const row = btn.closest('tr');
+        const shown = card
+            ? card.querySelector('h3')?.textContent.trim()
+            : row?.children[1]?.textContent.trim();
+        const mapped = state.resultsByKey.get(btn.dataset.key)?.title;
+        return shown === mapped ? null : `${shown} != ${mapped}`;
+    }).filter(Boolean)"""
+
+
+def test_download_key_maps_to_rendered_result_in_every_sort_mode(searched):
+    """The download button carries data-key into the *rendered* (sorted) list.
     A mismatch here would download the wrong book — the most dangerous
     possible regression of the inline-handler removal."""
     page = searched["page"]
+
+    # Grid layout: the toolbar sort buttons are only shown here (in list layout
+    # they are hidden and sorting goes through the column headers instead).
+    page.click('[data-action="setViewLayout"][data-arg="grid"]')
+    page.wait_for_timeout(200)
     for mode in ("size", "seeders", "relevance"):
-        page.click(f'[data-action="setSortMode"][data-arg="{mode}"]')
+        page.click(f'#search-sort-buttons [data-action="setSortMode"][data-arg="{mode}"]')
         page.wait_for_timeout(300)
-        mismatches = page.evaluate("""() =>
-            [...document.querySelectorAll('[data-action="startDownload"]')].map(btn => {
-                const card = btn.closest('.book-card');
-                const shown = card?.querySelector('h3')?.textContent.trim();
-                const mapped = state.renderedResults[+btn.dataset.idx]?.title;
-                return shown === mapped ? null : `${shown} != ${mapped}`;
-            }).filter(Boolean)""")
-        assert mismatches == [], f"sort={mode}: {mismatches}"
+        assert page.evaluate(_MAPPING_PROBE) == [], f"grid sort={mode}"
+
+    # List layout: sorting is driven by the table column headers. One <thead>
+    # per swimlane, so scope to the first — setSortMode is global anyway.
+    page.click('[data-action="setViewLayout"][data-arg="list"]')
+    page.wait_for_timeout(200)
+    for col in ("title", "size", "seeders"):
+        page.locator(f'#search-results th[data-action="setSortMode"][data-arg="{col}"]').first.click()
+        page.wait_for_timeout(300)
+        assert page.evaluate(_MAPPING_PROBE) == [], f"list sort={col}"
 
 
 def test_retry_wait_shows_progress_in_search_and_downloads(searched):
     page = searched["page"]
     retry_text = page.evaluate("""() => {
-        const result = state.renderedResults[0];
+        const probe = document.querySelector('[data-action="startDownload"]');
+        const result = state.resultsByKey.get(probe.dataset.key);
         const key = getDownloadKey(result);
         state.trackedDownloadJobs.set('retry-probe', {
             key, title: result.title, source: 'annas', url: result.url || ''
@@ -135,7 +161,7 @@ def test_download_completes_and_lands_in_library(searched):
     # Download the first rendered card; remember which book it claims to be.
     title = page.evaluate("""() => {
         const btn = document.querySelector('[data-action="startDownload"]');
-        return state.renderedResults[+btn.dataset.idx].title;
+        return state.resultsByKey.get(btn.dataset.key).title;
     }""")
     page.click('[data-action="startDownload"]')
 
@@ -192,6 +218,29 @@ def test_wishlist_add_search_delete(ui):
     page.click('[data-action="deleteWishlistItem"]')
     page.wait_for_timeout(500)
     assert page.locator('[data-action="deleteWishlistItem"]').count() == 0
+
+
+# ── Browse tab: filesystem-backed listing ───────────────────────────────────
+
+def test_browse_lists_roots_and_navigates_into_a_folder(ui):
+    """Smoke test of the Browse tab: the configured libraries show up, and
+    walking into a folder lists the files it really holds on disk."""
+    page = ui["page"]
+    page.click('[data-action="switchTab"][data-arg="browse"]')
+    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
+    roots = page.locator('#browse-roots button[data-action="browseRoot"]').count()
+    assert roots >= 1, "no library root rendered in Browse"
+    assert page.locator("#browse-no-roots").is_hidden()
+    assert page.locator("#browse-error").is_hidden()
+
+    # The seeded folder is listed, and opening it shows the file inside.
+    folder = page.locator('#browse-list [data-action="browseOpen"]',
+                          has_text=BROWSE_FIXTURE_DIR)
+    folder.first.click()
+    page.wait_for_timeout(500)
+    assert BROWSE_FIXTURE_FILE in page.inner_text("#browse-list")
+    assert BROWSE_FIXTURE_DIR in page.inner_text("#browse-breadcrumb")
+    assert page.locator("#browse-error").is_hidden()
 
 
 # ── Cover fallback via capture-phase error delegation ───────────────────────
