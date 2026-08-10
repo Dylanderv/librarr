@@ -111,6 +111,22 @@ Critère de suppression de l'ancien onglet Library : quand Browse couvre lister 
 
 ---
 
+## Étape 3b — Repli de renommage quand le déplacement du dossier échoue
+
+**Statut : terminé**
+
+- Bug latent dans `applyPlan` : quand `os.Rename` du dossier échouait, `FolderTo`
+  restait renseigné. La boucle des fichiers recalculait alors leur chemin source
+  comme si le dossier avait bougé, et tous les renommages échouaient à leur tour.
+- La branche « la cible existe déjà » faisait bien le reset : incohérence entre
+  deux branches censées faire le même repli.
+- `keepFilesInPlace` porte désormais le repli complet (reset de `FolderTo` +
+  destinations ramenées à côté de la source), et les deux branches l'appellent.
+  Test de non-régression : dossier parent en lecture seule, on vérifie que le
+  fichier est bien renommé sur place.
+
+---
+
 ## Étape 4 — Métadonnées
 
 **Statut : à faire**

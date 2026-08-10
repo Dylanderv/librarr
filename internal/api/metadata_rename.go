@@ -100,7 +100,7 @@ func (s *Server) buildRenamePlan(ctx context.Context, client *kavita.Client, id 
 	if out.Plan.FolderFrom != "" {
 		if err := s.checkRenamableDir(out.Plan.FolderFrom); err != nil {
 			out.Errors = append(out.Errors, fmt.Sprintf("folder not renamable: %v", err))
-			out.Plan.FolderFrom, out.Plan.FolderTo = "", ""
+			out.Plan.FolderFrom = ""
 			// Without the folder move, the files stay where they are.
 			keepFilesInPlace(&out.Plan)
 		}
@@ -109,10 +109,14 @@ func (s *Server) buildRenamePlan(ctx context.Context, client *kavita.Client, id 
 	return out
 }
 
-// keepFilesInPlace rewrites file destinations so they land next to their source
-// instead of inside a folder that is not going to move after all. Called
-// whenever a planned folder rename is dropped, at plan time or at apply time.
+// keepFilesInPlace drops a planned folder rename: it clears FolderTo and
+// rewrites file destinations so they land next to their source instead of
+// inside a folder that is not going to move after all. Clearing FolderTo is
+// part of the fallback, not an extra: applyPlan reads it to decide whether a
+// file's source followed the folder. Called whenever a planned folder rename is
+// dropped, at plan time or at apply time.
 func keepFilesInPlace(p *rename.Plan) {
+	p.FolderTo = ""
 	for i := range p.Files {
 		p.Files[i].To = filepath.Join(
 			filepath.Dir(p.Files[i].From),
@@ -171,18 +175,11 @@ func applyPlan(p *rename.Plan, canRename dirValidator) (renamed int, errs []stri
 			// Merging into an existing folder is a different operation with its
 			// own conflict rules; refuse rather than silently interleave.
 			errs = append(errs, fmt.Sprintf("target folder already exists: %s", p.FolderTo))
-			p.FolderTo = ""
 			keepFilesInPlace(p)
 		} else if err := os.Rename(p.FolderFrom, p.FolderTo); err != nil {
 			errs = append(errs, fmt.Sprintf("rename folder: %v", err))
 			// The files' destinations assumed the move happened, so fall back to
 			// renaming them where they are.
-			//
-			// KNOWN LIMITATION, kept as-is by this refactor: FolderTo is left set,
-			// so the loop below still rewrites each source into a folder that does
-			// not exist and every file rename then fails. Clearing it here would
-			// fix that, but it is a behaviour change in a path no test covers —
-			// tracked separately rather than smuggled into a refactor.
 			keepFilesInPlace(p)
 		} else {
 			renamed++

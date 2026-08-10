@@ -110,6 +110,45 @@ func TestApplyRenamePlanRefusesExistingTarget(t *testing.T) {
 	}
 }
 
+// TestApplyRenamePlanFallsBackWhenFolderMoveFails covers the other way a folder
+// move can be lost: os.Rename itself fails. The files must still be renamed
+// where they are, exactly as when the target folder already exists.
+func TestApplyRenamePlanFallsBackWhenFolderMoveFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory write permissions")
+	}
+	root := t.TempDir()
+	s := renameTestServer(t, root)
+
+	old := filepath.Join(root, "Old.Name")
+	mustWrite(t, filepath.Join(old, "Old.Name v1.cbz"))
+
+	// A read-only parent makes the folder rename fail while leaving the folder's
+	// own contents writable — the realistic "library root is mounted read-only"
+	// case. Restored before cleanup so TempDir can remove the tree.
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o777) })
+
+	plan := seriesRenamePlan{SeriesID: 1}
+	plan.Plan = rename.BuildPlan("Series", []string{filepath.Join(old, "Old.Name v1.cbz")}, rename.ModeFolderAndFiles)
+
+	n := s.applyRenamePlan(&plan)
+	if len(plan.Errors) != 1 {
+		t.Fatalf("want exactly the folder error, got %v", plan.Errors)
+	}
+	if !strings.Contains(plan.Errors[0], "rename folder") {
+		t.Errorf("unexpected error: %q", plan.Errors[0])
+	}
+	if n != 1 {
+		t.Errorf("renamed = %d, want 1 (the file, in place)", n)
+	}
+	if _, err := os.Stat(filepath.Join(old, "Series Vol.01.cbz")); err != nil {
+		t.Errorf("file was not renamed in place after the folder move failed: %v", err)
+	}
+}
+
 func TestApplyRenamePlanFolderOnlyKeepsFileNames(t *testing.T) {
 	root := t.TempDir()
 	s := renameTestServer(t, root)
