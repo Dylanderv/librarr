@@ -286,6 +286,61 @@
 
       <div id="browse-error" class="hidden mb-3 px-4 py-2.5 rounded-lg bg-red-900/40 border border-red-600/40 text-sm text-red-200"></div>
 
+      <!-- What a merge actually did: moved, left alone, and which folders
+           survived. Filled by app.js after an apply, cleared on navigation. -->
+      <div id="browse-merge-report" class="hidden mb-3 px-4 py-3 rounded-lg bg-slate-800/70 border border-slate-700 text-sm text-slate-300 space-y-1"></div>
+
+      <!-- Selection bar: appears as soon as two folders are ticked, since one
+           folder is nothing to merge. -->
+      <div id="browse-select-bar" class="hidden mb-3 flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 rounded-lg bg-slate-800/70 border border-slate-700">
+        <span id="browse-select-count" class="text-sm text-slate-300"></span>
+        <div class="flex items-center gap-2">
+          <button data-action="clearBrowseSelection" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors" data-i18n="browse_select_clear">Clear</button>
+          <button id="browse-merge-btn" data-action="openBrowseMerge" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_merge">Merge</button>
+        </div>
+      </div>
+
+      <!-- Merge panel: one folder per volume becomes one folder per series.
+           Preview first, apply only on an explicit click, like every other
+           write in this tab. -->
+      <div id="browse-merge-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white" data-i18n="browse_merge_title">Merge folders</h3>
+          <button data-action="closeBrowseMerge" class="text-slate-400 hover:text-white text-sm" data-i18n="browse_rename_close">Close</button>
+        </div>
+
+        <div class="px-4 py-3 border-b border-slate-800">
+          <label class="block">
+            <span class="block text-xs text-slate-400 mb-1" data-i18n="browse_merge_series">Target series name</span>
+            <input id="browse-merge-series" type="text" data-action-change="browseMergeSeries" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
+          </label>
+          <p class="mt-1 text-xs text-slate-500" data-i18n="browse_merge_series_hint">Pre-filled from what the selected folder names have in common. Edit it, then preview.</p>
+        </div>
+
+        <div id="browse-merge-target" class="px-4 py-2.5 text-sm text-slate-300 border-b border-slate-800"></div>
+        <div id="browse-merge-folders" class="px-4 py-2 text-xs text-slate-400 border-b border-slate-800"></div>
+        <div id="browse-merge-warnings" class="hidden px-4 py-2 text-xs text-amber-300/90 border-b border-slate-800"></div>
+        <div id="browse-merge-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-b border-red-600/30"></div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr class="border-b border-slate-800">
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_merge_col_source">Source</th>
+                <th class="text-left font-medium px-4 py-2 w-24" data-i18n="browse_rename_col_volume">Volume</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_merge_col_target">Destination</th>
+              </tr>
+            </thead>
+            <tbody id="browse-merge-rows" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
+          <span id="browse-merge-summary" class="text-xs text-slate-400"></span>
+          <button id="browse-merge-apply" data-action="applyBrowseMerge" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_merge_apply">Merge</button>
+        </div>
+      </div>
+
       <!-- Rename panel: preview first, apply only on an explicit click. Rows are
            rendered by app.js (file names may contain quotes). -->
       <div id="browse-rename-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
@@ -832,6 +887,6 @@
 
 <!-- Bump ?v= whenever app.js / app.css change so browsers don't run a stale
      cached bundle against fresh index.html (assets cache for up to 1h). -->
-<script src="/static/js/app.js?v=20260810f"></script>
+<script src="/static/js/app.js?v=20260810g"></script>
 </body>
 </html>

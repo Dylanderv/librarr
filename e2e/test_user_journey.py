@@ -13,7 +13,12 @@ import time
 
 import pytest
 
-from conftest import BROWSE_FIXTURE_DIR, BROWSE_FIXTURE_FILE
+from conftest import (
+    BROWSE_FIXTURE_DIR,
+    BROWSE_FIXTURE_FILE,
+    MERGE_FIXTURE_DIRS,
+    MERGE_FIXTURE_SERIES,
+)
 
 
 def active_tab(page):
@@ -241,6 +246,41 @@ def test_browse_lists_roots_and_navigates_into_a_folder(ui):
     assert BROWSE_FIXTURE_FILE in page.inner_text("#browse-list")
     assert BROWSE_FIXTURE_DIR in page.inner_text("#browse-breadcrumb")
     assert page.locator("#browse-error").is_hidden()
+
+
+def test_browse_merge_preview_lists_destinations(ui):
+    """Smoke test of the folder merge: ticking two volume folders unlocks the
+    action bar, and the panel previews one destination per file. Preview only —
+    nothing is applied, so the fixture survives for the other tests."""
+    page = ui["page"]
+    page.click('[data-action="switchTab"][data-arg="browse"]')
+    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
+
+    # One tick is not a merge: the bar shows, the button stays inert.
+    for name in MERGE_FIXTURE_DIRS:
+        page.locator(f'#browse-list input[data-action-change="browseSelect"]'
+                     f'[data-path$="{name}"]').check()
+        page.wait_for_timeout(100)
+        if name == MERGE_FIXTURE_DIRS[0]:
+            assert page.locator("#browse-merge-btn").is_disabled()
+
+    assert page.locator("#browse-select-bar").is_visible()
+    page.click("#browse-merge-btn")
+    page.wait_for_selector("#browse-merge-rows tr")
+
+    # The target name is derived from the folder names' common tokens, with the
+    # volume marker dropped.
+    assert page.input_value("#browse-merge-series") == MERGE_FIXTURE_SERIES
+    rows = page.inner_text("#browse-merge-rows")
+    assert f"{MERGE_FIXTURE_SERIES} Vol.01.cbz" in rows
+    assert f"{MERGE_FIXTURE_SERIES} Vol.02.cbz" in rows
+    assert page.locator("#browse-merge-apply").is_enabled()
+    assert page.locator("#browse-merge-error").is_hidden()
+
+    # Leaving the folder must drop both the selection and the panel.
+    page.click('[data-action="closeBrowseMerge"]')
+    page.click('[data-action="clearBrowseSelection"]')
+    assert page.locator("#browse-select-bar").is_hidden()
 
 
 def _open_browse_meta_panel(page):

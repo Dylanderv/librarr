@@ -285,3 +285,80 @@ Tests e2e : deux tests de fumée ajoutés (source routée + requête pré-rempli
 sélection d'un candidat qui remplit et arme, 503 correctement libellé). L'appel
 amont est stubbé au niveau du navigateur (`page.route`) : **aucun accès réseau
 externe**. Suite complète 13/13.
+
+---
+
+## Étape 8 — Fusion de dossiers de volumes en un dossier de série
+
+**Statut : terminé** (branche `feat/browse-folder-merge`)
+
+Les torrents produisent un dossier par volume, Kavita veut un dossier par série.
+C'était impossible : le renommage n'agit que sur les fichiers directs d'un
+dossier, et `applyPlan` refuse quand la cible existe déjà. **Ce refus reste
+inchangé** — la fusion est une opération distincte, pas un assouplissement du
+renommage : atterrir sans le vouloir dans un dossier peuplé n'est pas la même
+intention qu'y verser volontairement des volumes.
+
+- `POST /api/files/merge/preview` et `POST /api/files/merge/apply`, même payload
+  `{sources[], series_name, volumes}`, plan recalculé côté serveur à
+  l'application. Documentés dans `openapi.json` (`FolderMergeRequest`,
+  `FolderMergeRow`).
+- `volumes` est clé par `"<dossier source>/<fichier>"` et non par le nom de
+  fichier seul : deux dossiers de volumes portent très souvent des fichiers
+  homonymes.
+- Front : case à cocher sur chaque ligne de dossier, barre de sélection, panneau
+  d'aperçu avec numéro de volume éditable, bouton Fusionner distinct, et un
+  compte rendu persistant sous le fil d'Ariane.
+
+Décisions actées avec l'utilisateur avant écriture :
+
+1. Sélection multiple par cases à cocher, action « Fusionner » qui demande le
+   nom de la série cible.
+2. Nom cible pré-rempli avec le préfixe commun nettoyé, éditable, jamais
+   appliqué sans validation.
+3. Les dossiers d'origine ne sont supprimés que s'ils sont vides.
+
+Arbitrages pris pendant l'implémentation :
+
+- **Dossiers frères uniquement.** Une fusion de dossiers dispersés dans
+  l'arborescence est refusée explicitement (400) : quel parent gagne, que
+  devient le fil d'Ariane, et les risques ne sont pas les mêmes.
+- **Les sous-dossiers ne sont pas déplacés.** Un sous-dossier n'est pas un
+  volume ; le déplacer tel quel pourrait entrer en conflit avec un sous-dossier
+  de la cible, et descendre dedans déplacerait des fichiers que l'utilisateur
+  n'a jamais vus listés. Conséquence assumée et rendue visible **dans
+  l'aperçu** : le dossier qui en contient un est listé avec son contenu et ne
+  sera pas supprimé.
+- **Collisions arbitrées sur l'espace de noms fusionné.** `BuildPlanFor` tranche
+  les conflits à l'intérieur d'un dossier ; ici la cible en agrège plusieurs. Une
+  passe supplémentaire regroupe les destinations : plusieurs prétendants sur un
+  même nom → **aucun** n'est appliqué (`collision`), et un nom déjà pris dans la
+  cible par un fichier qui ne bouge pas → `exists`. Jamais d'écrasement
+  silencieux. `BuildPlanFor` reste la source de la détection de volume et de la
+  convention de nommage ; sa décision de dossier est ignorée (elle ne renomme
+  que si tous les fichiers partagent un parent, ce qu'une fusion n'est pas).
+- **Cible identique à un dossier source** (cas fréquent) : ses fichiers sont
+  renommés sur place, elle n'est jamais candidate à la suppression.
+- **`os.Remove`, jamais `os.RemoveAll`.** Il ne réussit que sur un dossier vide,
+  ce qui *est* la garantie. Un dossier qui survit est listé dans le compte rendu
+  avec ce qu'il contient encore, **entrées cachées comprises** : le listing
+  masque les dotfiles et `@eaDir` (sidecar Synology), donc un dossier qui
+  paraissait vide à l'écran refuse légitimement de partir — et le nommer est la
+  seule réponse utile. Rien que l'utilisateur n'a pas vu n'est jamais supprimé.
+- **Écart mineur assumé sur la barre d'action** : elle apparaît dès la première
+  case cochée (sinon « Effacer » serait inatteignable à un seul coché), mais le
+  bouton Fusionner reste désarmé sous deux dossiers.
+- Bornes : 100 dossiers et 2000 fichiers par requête, au-delà 400 — un aperçu
+  plus gros ne se lit pas.
+
+Tests : 11 tests Go (`files_merge_test.go`, `t.TempDir()`) dont la reproduction
+exacte du cas *La Fille de la plage*, la collision non appliquée, le dossier
+gardé pour cause de sous-dossier **et** pour cause d'`@eaDir`, la cible identique
+à une source, les dossiers non frères, le traversal et l'invalidation du cache.
+Un test de fumée e2e sur l'aperçu (sans application, pour ne pas consommer la
+fixture) : suite complète **14/14**.
+
+Dette identifiée, non traitée : la fusion ne sait pas fusionner des dossiers de
+bibliothèques différentes ni des dossiers imbriqués, et ne propose pas de
+regrouper automatiquement les dossiers d'une même série — la sélection reste
+manuelle.

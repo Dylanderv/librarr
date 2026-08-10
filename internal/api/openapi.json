@@ -81,6 +81,30 @@
           "tags":         {"type": "array", "items": {"type": "string"}}
         }
       },
+      "FolderMergeRequest": {
+        "type": "object",
+        "description": "Payload shared by /api/files/merge/preview and /api/files/merge/apply — applying is 'preview again, then act', not a second code path. The plan is always recomputed server-side.",
+        "required": ["sources", "series_name"],
+        "properties": {
+          "sources":     {"type": "array", "minItems": 2, "maxItems": 100, "items": {"type": "string"}, "description": "Absolute paths of the folders to merge. They must all share the same parent."},
+          "series_name": {"type": "string", "description": "Target series name; sanitized into a single path segment under the shared parent"},
+          "volumes":     {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Volume number per file, keyed by \"<source folder name>/<file name>\". A value here overrides detection; a file absent from the map falls back to detection, and a file with no volume either way is left where it is."}
+        }
+      },
+      "FolderMergeRow": {
+        "type": "object",
+        "description": "One file of one selected folder. status is a key, not a sentence, so the reason is translatable.",
+        "properties": {
+          "key":           {"type": "string", "description": "\"<source folder name>/<file name>\" — the key to use in volumes"},
+          "folder":        {"type": "string"},
+          "name":          {"type": "string"},
+          "kind":          {"type": "string"},
+          "volume":        {"type": "integer"},
+          "volume_source": {"type": "string", "enum": ["manual", "detected", "none"]},
+          "target":        {"type": "string", "description": "Target file name inside the series folder"},
+          "status":        {"type": "string", "enum": ["move", "in_place", "no_volume", "collision", "exists"], "description": "Only \"move\" is applied. in_place: already in the target folder under that name. no_volume: nothing supplied and nothing detected, never guessed. collision: several selected files claim that name, so none is moved. exists: a file not part of the move already has that name in the target folder."}
+        }
+      },
       "FileMetadataRequest": {
         "type": "object",
         "description": "Payload shared by /api/files/metadata/preview and /api/files/metadata/apply — applying is 'preview again, then act', not a second code path.",
@@ -261,6 +285,35 @@
           "400": {"description": "Invalid JSON body, missing series name, missing or unknown rename mode, or path is not a directory"},
           "403": {"description": "Path outside the libraries, or a bare library root"},
           "404": {"description": "Folder not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/merge/preview": {
+      "post": {
+        "summary": "Show what merging several volume folders into one series folder would do (admin)",
+        "description": "Torrents produce one folder per volume, Kavita wants one folder per series. Distinct from /api/files/rename/*, which still refuses an existing target folder. Constraints: at least two folders, all sharing the same parent (scattered folders are refused), only their direct files move, subfolders stay where they are. The target is <parent>/<sanitized series name>, which may already exist or be one of the selected folders. volumes is keyed by \"<source folder name>/<file name>\" because two volume folders often hold identically named files.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FolderMergeRequest"}}}},
+        "responses": {
+          "200": {"description": "One row per file of every selected folder, with the target name and a status key", "content": {"application/json": {"schema": {"type": "object", "properties": {"parent": {"type": "string"}, "series_name": {"type": "string"}, "target": {"type": "string"}, "target_exists": {"type": "boolean"}, "folders": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "is_target": {"type": "boolean"}, "files": {"type": "integer"}, "subfolders": {"type": "array", "items": {"type": "string"}, "description": "Left where they are; a folder holding one is never removed"}}}}, "files": {"type": "array", "items": {"$ref": "#/components/schemas/FolderMergeRow"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Invalid JSON body, missing series name, fewer than two folders, more than 100 folders, the same folder twice, folders that are not siblings, a path that is not a folder, or more than 2000 files"},
+          "403": {"description": "A path outside the libraries, or a bare library root"},
+          "404": {"description": "One of the folders was not found"},
+          "503": {"description": "No library directory is configured"}
+        }
+      }
+    },
+    "/api/files/merge/apply": {
+      "post": {
+        "summary": "Move the files of several sibling folders into one series folder (admin)",
+        "description": "Same payload as /api/files/merge/preview, recomputed server-side. Only rows whose status is \"move\" are applied: a collision or a name already taken in the target is never overwritten. The target folder is created if missing, with no hard-coded mode so the umask decides. A source folder is removed only when os.Remove succeeds on it, i.e. only when it is empty — never recursively; one that survives is reported with what it still holds, hidden entries (@eaDir, dotfiles) included, since those are exactly why a folder that looked empty in the listing refuses to go.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FolderMergeRequest"}}}},
+        "responses": {
+          "200": {"description": "Result; per-file failures are collected rather than aborting the batch", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string", "description": "The target folder, to reopen the listing on"}, "moved": {"type": "integer"}, "skipped": {"type": "array", "description": "Rows that were not applied, with the same status keys as the preview", "items": {"$ref": "#/components/schemas/FolderMergeRow"}}, "removed_folders": {"type": "array", "items": {"type": "string"}}, "kept_folders": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "reason": {"type": "string", "enum": ["not_empty", "remove_failed"]}, "remaining": {"type": "array", "items": {"type": "string"}, "description": "Up to 20 entry names, hidden ones included"}}}}, "errors": {"type": "array", "items": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
+          "400": {"description": "Same refusals as the preview"},
+          "403": {"description": "A path outside the libraries, or a bare library root"},
+          "404": {"description": "One of the folders was not found"},
+          "500": {"description": "The target folder could not be created"},
           "503": {"description": "No library directory is configured"}
         }
       }

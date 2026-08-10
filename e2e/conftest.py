@@ -48,6 +48,12 @@ BROKEN_COVER_ID = 103
 BROWSE_FIXTURE_DIR = "E2E Browse Series"
 BROWSE_FIXTURE_FILE = "E2E Browse Series Vol.01.cbz"
 
+# Two torrent-shaped volume folders, one file each, for the merge panel. Named
+# exactly like the case the feature exists for: a common series prefix followed
+# by a volume marker, so the suggested target name has something to derive.
+MERGE_FIXTURE_DIRS = ("E2E.Merge.Me.T01.GROUP", "E2E.Merge.Me.T02.GROUP")
+MERGE_FIXTURE_SERIES = "E2E Merge Me"
+
 
 def _free_port() -> int:
     with socket.socket() as s:
@@ -207,6 +213,10 @@ def app(stub_server, librarr_binary, tmp_path_factory):
     browse_dir.mkdir()
     # An empty-but-valid zip: enough for the listing, which never opens the file.
     (browse_dir / BROWSE_FIXTURE_FILE).write_bytes(b"PK\x05\x06" + b"\0" * 18)
+    for name in MERGE_FIXTURE_DIRS:
+        d = books / name
+        d.mkdir()
+        (d / f"{name}.cbz").write_bytes(b"PK\x05\x06" + b"\0" * 18)
 
     env = {
         **os.environ,

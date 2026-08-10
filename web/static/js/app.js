@@ -321,6 +321,38 @@ const I18N = {
     browse_rename_file_cancel: 'Cancel',
     browse_rename_file_done: 'File renamed',
     browse_rename_file_failed: 'Failed to rename this file',
+    // Browse — merging several volume folders into one series folder
+    browse_select_folder: 'Select this folder',
+    browse_select_clear: 'Clear',
+    browse_select_count: '{count} folder(s) selected',
+    browse_merge: 'Merge',
+    browse_merge_title: 'Merge folders',
+    browse_merge_series: 'Target series name',
+    browse_merge_series_hint: 'Pre-filled from what the selected folder names have in common. Edit it, then preview.',
+    browse_merge_apply: 'Merge',
+    browse_merge_applying: 'Merging…',
+    browse_merge_col_source: 'Source',
+    browse_merge_col_target: 'Destination',
+    browse_merge_target_new: 'New folder: {name}',
+    browse_merge_target_existing: 'Existing folder: {name}',
+    browse_merge_folder: '{name} — {count} file(s)',
+    browse_merge_folder_target: '{name} — {count} file(s), the target folder',
+    browse_merge_folder_subfolders: '{name} — {count} file(s), holds {sub}',
+    browse_merge_empty: 'The selected folders hold no files',
+    browse_merge_summary: '{count} file(s) will be moved',
+    browse_merge_nothing: 'Nothing to move',
+    browse_merge_preview_failed: 'Failed to preview the merge',
+    browse_merge_failed: 'Failed to merge these folders',
+    browse_merge_done: '{count} file(s) moved',
+    // Row statuses, mirrored from the API's status keys.
+    browse_merge_status_in_place: 'Already in place under this name',
+    browse_merge_status_no_volume: 'No volume number — enter one to include it',
+    browse_merge_status_collision: 'Several files claim this name — none is moved',
+    browse_merge_status_exists: 'A file already has this name in the target folder',
+    browse_merge_report_removed: 'Emptied and removed: {names}',
+    browse_merge_report_kept: 'Kept, still holding {items}: {name}',
+    browse_merge_report_kept_failed: 'Kept, could not be removed: {name}',
+    browse_merge_report_skipped: '{count} file(s) left where they are',
     // Metadata — folder panel
     browse_meta: 'Metadata',
     browse_meta_folder_title: 'Folder metadata',
@@ -732,6 +764,13 @@ const state = {
   renamePath: null,
   renameVolumes: {},
   renamePreview: null,
+  // Merge: the folders ticked in the listing (absolute paths, current folder
+  // only), then what the merge panel was opened on. The two are kept apart so
+  // ticking one more folder cannot silently change a preview already on screen.
+  browseSelection: [],
+  mergeSources: [],
+  mergeVolumes: {},
+  mergePreview: null,
   // Metadata panels: the folder / file each was opened on. metaPreview holds the
   // last preview, and is dropped as soon as any input changes — applying a plan
   // the user is no longer looking at is exactly what decision 4 forbids.
@@ -3358,6 +3397,14 @@ async function openBrowsePath(path) {
   // Leaving the folder invalidates the plan that was previewed on it.
   if (state.renamePath && state.renamePath !== data.path) closeBrowseRename();
   if (state.metaPath && state.metaPath !== data.path) closeBrowseMeta();
+  // Selection is per-folder — the paths it holds are not in the new listing —
+  // and so is the merge panel built from it. The previous report described the
+  // folder we are leaving, so it goes too; applyBrowseMerge re-renders its own
+  // after this call.
+  state.browseSelection = [];
+  closeBrowseMerge();
+  hideBrowseMergeReport();
+  renderBrowseSelectBar();
   // The file panel is anchored to one file, which the new listing no longer shows.
   if (state.metaFilePath) closeBrowseFileMeta();
   // A library root is never renamable, so the button has nothing to offer there.
@@ -3418,6 +3465,10 @@ function clearBrowseListing() {
   closeBrowseRename();
   closeBrowseMeta();
   closeBrowseFileMeta();
+  state.browseSelection = [];
+  closeBrowseMerge();
+  hideBrowseMergeReport();
+  renderBrowseSelectBar();
   document.getElementById('browse-rename-btn').classList.add('hidden');
   document.getElementById('browse-meta-btn').classList.add('hidden');
   document.getElementById('browse-breadcrumb').innerHTML = '';
@@ -3489,7 +3540,31 @@ function browseRow(entry, targetPath, isParent) {
   meta.appendChild(modified);
   row.appendChild(meta);
 
-  return row;
+  // Only folders are selectable: merging is a folder operation.
+  return entry.is_dir ? browseSelectableRow(row, targetPath) : row;
+}
+
+// browseSelectableRow puts the merge tick-box beside a folder row rather than
+// inside it: the row itself is a <button> that opens the folder, and a checkbox
+// nested in a button would toggle on every navigation click.
+function browseSelectableRow(row, path) {
+  const wrap = document.createElement('div');
+  wrap.className = 'flex items-center gap-2 pl-4';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'shrink-0 rounded border-slate-600 bg-slate-800';
+  cb.dataset.actionChange = 'browseSelect';
+  cb.dataset.path = path;
+  cb.checked = state.browseSelection.includes(path);
+  cb.title = t('browse_select_folder');
+  cb.setAttribute('aria-label', t('browse_select_folder'));
+  wrap.appendChild(cb);
+
+  row.classList.remove('w-full');
+  row.classList.add('flex-1', 'min-w-0');
+  wrap.appendChild(row);
+  return wrap;
 }
 
 // Per-file rename trigger: free-form naming for the one file, next to the
@@ -3839,6 +3914,307 @@ function showBrowseRenameError(message) {
 
 function hideBrowseRenameError() {
   document.getElementById('browse-rename-error').classList.add('hidden');
+}
+
+// ============================================================
+// BROWSE — MERGE (several volume folders into one series folder)
+// ============================================================
+// Torrents hand out one folder per volume; Kavita wants one folder per series.
+// The listing grows a tick-box on every folder, and two or more ticks unlock the
+// Merge panel, which behaves like every other write here: preview, read, then an
+// explicit Apply. The server re-plans from the payload on apply, so the panel is
+// a view of the decision rather than the decision itself.
+
+function renderBrowseSelectBar() {
+  const n = state.browseSelection.length;
+  // The bar shows from the first tick so Clear is always reachable, but merging
+  // needs two folders — the button says so by being inert rather than by
+  // answering an error after the click.
+  document.getElementById('browse-select-bar').classList.toggle('hidden', n === 0);
+  document.getElementById('browse-select-count').textContent = t('browse_select_count', { count: n });
+  document.getElementById('browse-merge-btn').disabled = n < 2;
+}
+
+function browseSelect(el) {
+  const path = el.dataset.path;
+  const i = state.browseSelection.indexOf(path);
+  if (el.checked && i < 0) state.browseSelection.push(path);
+  else if (!el.checked && i >= 0) state.browseSelection.splice(i, 1);
+  // An open preview was computed for the previous set of folders.
+  if (state.mergeSources.length) closeBrowseMerge();
+  renderBrowseSelectBar();
+}
+
+function clearBrowseSelection() {
+  state.browseSelection = [];
+  closeBrowseMerge();
+  document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]')
+    .forEach(cb => { cb.checked = false; });
+  renderBrowseSelectBar();
+}
+
+// Tokens that belong to the volume rather than to the series, so a selection of
+// "Serie.Vol.01" and "Serie.Vol.02" suggests "Serie" and not "Serie Vol".
+const BROWSE_MERGE_VOLUME_TOKENS = /^(?:vol|volume|tome|tomes|t|v|\d+)$/i;
+
+// browseMergeSuggestedName pre-fills the target name with what the selected
+// folder names have in common. It compares *tokens*, not characters: a raw
+// character prefix of "…plage.T01…" and "…plage.T02…" stops mid-token on "T0",
+// which is not a name anyone would want offered.
+function browseMergeSuggestedName(paths) {
+  if (!paths.length) return '';
+  const tokenized = paths.map(p => browseBaseName(p).split(/[.\s_-]+/).filter(Boolean));
+  let common = tokenized[0].slice();
+  tokenized.slice(1).forEach(tokens => {
+    let i = 0;
+    while (i < common.length && i < tokens.length
+      && common[i].toLowerCase() === tokens[i].toLowerCase()) i++;
+    common = common.slice(0, i);
+  });
+  while (common.length && BROWSE_MERGE_VOLUME_TOKENS.test(common[common.length - 1])) common.pop();
+  // Nothing in common (or nothing left of it) is not a reason to offer an empty
+  // field: the first folder's name is at least a starting point to edit.
+  return common.join(' ') || browseBaseName(paths[0]);
+}
+
+function openBrowseMerge() {
+  if (state.browseSelection.length < 2) return;
+  state.mergeSources = state.browseSelection.slice();
+  state.mergeVolumes = {};
+  state.mergePreview = null;
+  hideBrowseMergeReport();
+  document.getElementById('browse-merge-series').value = browseMergeSuggestedName(state.mergeSources);
+  document.getElementById('browse-merge-panel').classList.remove('hidden');
+  refreshBrowseMergePreview();
+}
+
+function closeBrowseMerge() {
+  state.mergeSources = [];
+  state.mergeVolumes = {};
+  state.mergePreview = null;
+  document.getElementById('browse-merge-panel').classList.add('hidden');
+  hideBrowseMergeError();
+}
+
+function browseMergePayload() {
+  return {
+    sources: state.mergeSources,
+    series_name: document.getElementById('browse-merge-series').value,
+    volumes: state.mergeVolumes,
+  };
+}
+
+async function refreshBrowseMergePreview() {
+  if (state.mergeSources.length < 2) return;
+  hideBrowseMergeError();
+  let data;
+  try {
+    data = await postFiles('/api/files/merge/preview', browseMergePayload());
+  } catch (err) {
+    state.mergePreview = null;
+    showBrowseMergeError(err.message || t('browse_merge_preview_failed'));
+    document.getElementById('browse-merge-apply').disabled = true;
+    return;
+  }
+  state.mergePreview = data;
+  renderBrowseMergePreview(data);
+}
+
+function renderBrowseMergePreview(data) {
+  const target = document.getElementById('browse-merge-target');
+  target.textContent = t(data.target_exists ? 'browse_merge_target_existing' : 'browse_merge_target_new',
+    { name: browseBaseName(data.target) });
+
+  // One line per selected folder, so what will survive the merge — and why — is
+  // readable before the click, not only in the report afterwards.
+  const folders = document.getElementById('browse-merge-folders');
+  folders.textContent = (data.folders || []).map(f => {
+    if (f.subfolders && f.subfolders.length) {
+      return t('browse_merge_folder_subfolders',
+        { name: f.name, count: f.files, sub: f.subfolders.join(', ') });
+    }
+    return t(f.is_target ? 'browse_merge_folder_target' : 'browse_merge_folder',
+      { name: f.name, count: f.files });
+  }).join(' · ');
+
+  const warn = document.getElementById('browse-merge-warnings');
+  const warnings = data.warnings || [];
+  warn.textContent = warnings.join(' · ');
+  warn.classList.toggle('hidden', warnings.length === 0);
+
+  const body = document.getElementById('browse-merge-rows');
+  body.innerHTML = '';
+  const files = data.files || [];
+  files.forEach(row => body.appendChild(browseMergeRow(row)));
+  if (files.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.className = 'px-4 py-3 text-sm text-slate-500';
+    td.textContent = t('browse_merge_empty');
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+
+  const moving = files.filter(f => f.status === 'move').length;
+  document.getElementById('browse-merge-summary').textContent =
+    moving === 0 ? t('browse_merge_nothing') : t('browse_merge_summary', { count: moving });
+  document.getElementById('browse-merge-apply').disabled = moving === 0;
+}
+
+function browseMergeRow(row) {
+  const tr = document.createElement('tr');
+
+  const source = document.createElement('td');
+  source.className = 'px-4 py-2 align-middle';
+  const folder = document.createElement('div');
+  folder.className = 'text-xs text-slate-500 break-all';
+  folder.textContent = row.folder;
+  source.appendChild(folder);
+  const name = document.createElement('div');
+  name.className = 'text-slate-300 break-all';
+  name.textContent = row.name;
+  source.appendChild(name);
+  tr.appendChild(source);
+
+  // Editable for the same reason as in the rename panel: detection both misses
+  // volumes and invents them, and an empty field means "leave this file alone".
+  const volCell = document.createElement('td');
+  volCell.className = 'px-4 py-2 align-middle';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.className = 'w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500';
+  input.value = row.volume ? String(row.volume) : '';
+  input.placeholder = t('browse_rename_volume_placeholder');
+  input.dataset.actionChange = 'browseMergeVolume';
+  input.dataset.key = row.key;
+  volCell.appendChild(input);
+  tr.appendChild(volCell);
+
+  const target = document.createElement('td');
+  target.className = 'px-4 py-2 align-middle';
+  if (row.status === 'move') {
+    const to = document.createElement('div');
+    to.className = 'text-emerald-300 break-all';
+    to.textContent = row.target;
+    target.appendChild(to);
+  } else {
+    if (row.target) {
+      const to = document.createElement('div');
+      to.className = 'text-slate-500 break-all line-through';
+      to.textContent = row.target;
+      target.appendChild(to);
+    }
+    const why = document.createElement('div');
+    // A collision or a taken name is a refusal, not a detail.
+    why.className = 'text-xs ' + (row.status === 'in_place' ? 'text-slate-500' : 'text-amber-300/90');
+    why.textContent = t(`browse_merge_status_${row.status}`);
+    target.appendChild(why);
+  }
+  tr.appendChild(target);
+
+  return tr;
+}
+
+function browseMergeVolume(el) {
+  const raw = el.value.trim();
+  const n = parseInt(raw, 10);
+  if (raw === '' || !(n > 0)) {
+    delete state.mergeVolumes[el.dataset.key];
+  } else {
+    state.mergeVolumes[el.dataset.key] = n;
+  }
+  refreshBrowseMergePreview();
+}
+
+async function applyBrowseMerge() {
+  if (state.mergeSources.length < 2) return;
+  const btn = document.getElementById('browse-merge-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_merge_applying');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/merge/apply', browseMergePayload());
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseMergeError(err.message || t('browse_merge_failed'));
+    return;
+  }
+  btn.textContent = label;
+
+  showToast(t('browse_merge_done', { count: data.moved || 0 }),
+    data.errors && data.errors.length ? 'error' : 'success');
+
+  // The listing must show the new folder before the report describes it —
+  // openBrowsePath clears the previous report, so the new one comes after.
+  await openBrowsePath(data.path || state.browsePath);
+  renderBrowseMergeReport(data);
+}
+
+// renderBrowseMergeReport says what moved, what was left alone, and which
+// folders survived. A folder kept because of a leftover the listing hides
+// (@eaDir, a dotfile) is the case this exists for: without naming the leftover,
+// "the folder is still there" reads as a bug.
+function renderBrowseMergeReport(data) {
+  const el = document.getElementById('browse-merge-report');
+  el.innerHTML = '';
+  const lines = [];
+
+  lines.push({ text: t('browse_merge_done', { count: data.moved || 0 }), tone: 'text-slate-200' });
+  if (data.skipped && data.skipped.length) {
+    lines.push({ text: t('browse_merge_report_skipped', { count: data.skipped.length }), tone: 'text-amber-300/90' });
+    data.skipped.forEach(row => {
+      lines.push({
+        text: `${row.folder}/${row.name} — ${t(`browse_merge_status_${row.status}`)}`,
+        tone: 'text-slate-400 pl-3',
+      });
+    });
+  }
+  if (data.removed_folders && data.removed_folders.length) {
+    lines.push({
+      text: t('browse_merge_report_removed', { names: data.removed_folders.join(', ') }),
+      tone: 'text-slate-400',
+    });
+  }
+  (data.kept_folders || []).forEach(k => {
+    lines.push({
+      text: k.remaining && k.remaining.length
+        ? t('browse_merge_report_kept', { name: k.name, items: k.remaining.join(', ') })
+        : t('browse_merge_report_kept_failed', { name: k.name }),
+      tone: 'text-amber-300/90',
+    });
+  });
+  (data.errors || []).forEach(e => lines.push({ text: e, tone: 'text-red-300' }));
+  (data.warnings || []).forEach(w => lines.push({ text: w, tone: 'text-slate-400' }));
+
+  // Built with DOM APIs: every name in here comes from the filesystem.
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'text-xs break-all ' + line.tone;
+    div.textContent = line.text;
+    el.appendChild(div);
+  });
+  el.classList.remove('hidden');
+}
+
+function hideBrowseMergeReport() {
+  const el = document.getElementById('browse-merge-report');
+  el.innerHTML = '';
+  el.classList.add('hidden');
+}
+
+function showBrowseMergeError(message) {
+  const el = document.getElementById('browse-merge-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function hideBrowseMergeError() {
+  document.getElementById('browse-merge-error').classList.add('hidden');
 }
 
 // ============================================================
@@ -4541,6 +4917,10 @@ const CLICK_ACTIONS = {
   },
   // Cancelling just re-renders the listing from the server.
   cancelBrowseFileRename: () => openBrowsePath(state.browsePath),
+  clearBrowseSelection: () => clearBrowseSelection(),
+  openBrowseMerge: () => openBrowseMerge(),
+  closeBrowseMerge: () => closeBrowseMerge(),
+  applyBrowseMerge: () => applyBrowseMerge(),
   openBrowseMeta: () => openBrowseMeta(),
   closeBrowseMeta: () => closeBrowseMeta(),
   previewBrowseMeta: () => previewBrowseMeta(),
@@ -4604,6 +4984,10 @@ const CHANGE_ACTIONS = {
   changeUserRole: el => changeUserRole(+el.dataset.id, el.value),
   browseRenameMode: () => refreshBrowseRenamePreview(),
   browseRenameVolume: el => browseRenameVolume(el),
+  browseSelect: el => browseSelect(el),
+  // The target name feeds every destination in the table, so it re-previews.
+  browseMergeSeries: () => refreshBrowseMergePreview(),
+  browseMergeVolume: el => browseMergeVolume(el),
   browseMetaToggle: el => browseMetaToggle(el),
   // Candidates belong to the source that produced them: switching source
   // leaves a list that no longer matches the selector above it.

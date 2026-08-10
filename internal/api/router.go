@@ -365,6 +365,8 @@ func (s *Server) registerFilesRoutes() {
 	s.mux.HandleFunc("POST /api/files/rename/preview", requireAdmin(s.handleFilesRenamePreview))
 	s.mux.HandleFunc("POST /api/files/rename/apply", requireAdmin(s.handleFilesRenameApply))
 	s.mux.HandleFunc("POST /api/files/rename/file", requireAdmin(s.handleFilesRenameFile))
+	s.mux.HandleFunc("POST /api/files/merge/preview", requireAdmin(s.handleFilesMergePreview))
+	s.mux.HandleFunc("POST /api/files/merge/apply", requireAdmin(s.handleFilesMergeApply))
 	s.mux.HandleFunc("GET /api/files/metadata", requireAdmin(s.handleFilesMetadata))
 	s.mux.HandleFunc("POST /api/files/metadata/preview", requireAdmin(s.handleFilesMetadataPreview))
 	s.mux.HandleFunc("POST /api/files/metadata/apply", requireAdmin(s.handleFilesMetadataApply))
