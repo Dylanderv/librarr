@@ -186,9 +186,16 @@ Arbitrage pris pendant l'implémentation :
   dossiers : rien de tel n'existe ici, et apparier par le nom rescannerait
   silencieusement la mauvaise bibliothèque. `root` sert donc à valider que la
   requête vise une bibliothèque réelle, et la réponse annonce `scope: "all"`.
-  **À confirmer** : si un scan ciblé est souhaité, il faut ajouter
-  `Libraries()` + `ScanLibraryByID()` au client Kavita et une résolution inverse
-  de chemin dans `config`.
+  **Tranché** : le scan global est jugé suffisant, la portée étant annoncée
+  explicitement partout (réponse, libellé, openapi, README). Un scan ciblé
+  resterait possible en ajoutant `Libraries()` + `ScanLibraryByID()` au client
+  Kavita et une résolution inverse de chemin dans `config` — dette identifiée,
+  non planifiée.
+- **`ScanLibrary` sans `libraryId`** : les versions récentes de Kavita
+  documentent `?libraryId=&force=`. La forme actuelle est préexistante (pipeline
+  d'import), donc hors périmètre ; à vérifier contre l'instance réelle au
+  déploiement. Si les scans d'import deviennent muets, c'est le premier endroit
+  à regarder.
 
 ---
 
