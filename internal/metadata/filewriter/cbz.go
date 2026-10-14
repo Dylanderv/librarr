@@ -53,7 +53,9 @@ type comicInfo struct {
 func applyCBZ(path string, f Fields) error {
 	raw, err := readZipEntry(path, comicInfoName)
 	if err != nil {
-		return err
+		// A .cbz that isn't a real ZIP is almost always a mislabeled archive
+		// (RAR/7z). Give an actionable message instead of "not a valid zip file".
+		return explainNonZip(path, err)
 	}
 
 	var ci comicInfo

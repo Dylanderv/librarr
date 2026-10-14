@@ -68,9 +68,8 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The UI's single search box feeds all three library tabs, so honor ?q=
-	// here too — it was previously accepted and silently ignored.
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	// The UI's single search box feeds all three library tabs; see libraryQueryParam.
+	query := libraryQueryParam(r)
 
 	items, err := s.db.SearchItems(mediaType, query, limit, offset)
 	if err != nil {
@@ -107,7 +106,7 @@ func (s *Server) serveLocalLibraryByMediaType(w http.ResponseWriter, r *http.Req
 		page = 1
 	}
 	offset := (page - 1) * pageSize
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	query := libraryQueryParam(r)
 
 	items, err := s.db.SearchItems(mediaType, query, pageSize, offset)
 	if err != nil {
