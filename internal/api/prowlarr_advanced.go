@@ -19,37 +19,41 @@ const maxProwlarrCategories = 20
 // parseProwlarrOptions reads the advanced-search overrides from the request.
 // pq sets the exact Prowlarr query (no suffix variants); pcat is a
 // comma-separated list of Newznab category IDs (digits only, anything else is
-// dropped). No pq and no valid pcat means "tab defaults".
+// dropped). pcat present-but-empty explicitly clears the category filter;
+// pcat absent keeps the tab defaults. No pq and no pcat means "tab defaults".
 func parseProwlarrOptions(r *http.Request) search.ProwlarrOptions {
 	pq := truncateSearchQuery(strings.TrimSpace(r.URL.Query().Get("pq")))
+	_, hasPcat := r.URL.Query()["pcat"]
 	var cats []string
-	for _, part := range strings.Split(r.URL.Query().Get("pcat"), ",") {
-		part = strings.TrimSpace(part)
-		if part == "" || len(part) > 6 {
-			continue
-		}
-		digits := true
-		for _, c := range part {
-			if c < '0' || c > '9' {
-				digits = false
+	if hasPcat {
+		for _, part := range strings.Split(r.URL.Query().Get("pcat"), ",") {
+			part = strings.TrimSpace(part)
+			if part == "" || len(part) > 6 {
+				continue
+			}
+			digits := true
+			for _, c := range part {
+				if c < '0' || c > '9' {
+					digits = false
+					break
+				}
+			}
+			if !digits {
+				continue
+			}
+			if _, err := strconv.Atoi(part); err != nil {
+				continue
+			}
+			cats = append(cats, part)
+			if len(cats) >= maxProwlarrCategories {
 				break
 			}
 		}
-		if !digits {
-			continue
-		}
-		if _, err := strconv.Atoi(part); err != nil {
-			continue
-		}
-		cats = append(cats, part)
-		if len(cats) >= maxProwlarrCategories {
-			break
-		}
 	}
-	if pq == "" && len(cats) == 0 {
+	if pq == "" && !hasPcat {
 		return search.ProwlarrOptions{}
 	}
-	return search.ProwlarrOptions{Query: pq, Categories: cats, UseOverride: true}
+	return search.ProwlarrOptions{Query: pq, Categories: cats, CategoriesSet: hasPcat, UseOverride: true}
 }
 
 // handleProwlarrCategories serves Prowlarr's default indexer category tree

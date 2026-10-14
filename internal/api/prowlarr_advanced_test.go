@@ -34,6 +34,31 @@ func TestParseProwlarrOptions_QueryAndCategories(t *testing.T) {
 	}
 }
 
+func TestParseProwlarrOptions_PcatPresentEmptyMeansNoFilter(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/search/manga?q=berserk&pcat=", nil)
+	opts := parseProwlarrOptions(req)
+	if !opts.UseOverride {
+		t.Fatal("expected override when pcat is present, even empty")
+	}
+	if !opts.CategoriesSet {
+		t.Error("expected CategoriesSet when pcat param is present")
+	}
+	if len(opts.Categories) != 0 {
+		t.Errorf("expected zero categories (no filter), got %v", opts.Categories)
+	}
+}
+
+func TestParseProwlarrOptions_PcatAbsentKeepsDefaults(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/search/manga?q=berserk&pq=berserk+deluxe", nil)
+	opts := parseProwlarrOptions(req)
+	if !opts.UseOverride {
+		t.Fatal("expected override when pq is present")
+	}
+	if opts.CategoriesSet {
+		t.Error("expected CategoriesSet=false when pcat param is absent (tab defaults apply)")
+	}
+}
+
 func TestParseProwlarrOptions_SanitizesCategories(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/search/manga?q=x&pq=y&pcat=7020%2Cabc%2C-1%2C%2C9999999999999999999999", nil)
 	opts := parseProwlarrOptions(req)

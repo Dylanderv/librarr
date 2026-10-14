@@ -101,10 +101,11 @@ func (p *Prowlarr) searchVariants(query string, categories []string) []prowlarrS
 			{query: query + " audiobook", categories: nil, limit: 30},
 		}
 	case "manga":
+		// Plain display query only: the "manga"/"comic" suffix variants
+		// polluted results (manga noise on comic searches and vice versa).
+		// Broadening is the advanced panel's job (?pq= with no categories).
 		return []prowlarrSearchParams{
 			{query: query, categories: categories, limit: 50},
-			{query: query + " manga", categories: nil, limit: 30},
-			{query: query + " comic", categories: nil, limit: 30},
 		}
 	default:
 		return []prowlarrSearchParams{
