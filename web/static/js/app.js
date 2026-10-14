@@ -1231,6 +1231,7 @@ function renderBookCard(result, index) {
       </div>
       <div class="p-3 flex-1 flex flex-col">
         <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1" title="${escapeHtml(result.title || '')}">${escapeHtml(result.title || 'Unknown')}</h3>
+        ${(result.demoted && typeof demoteBadge === 'function') ? demoteBadge(result) : ''}
         <p class="text-xs text-slate-400 mb-2 line-clamp-1">${escapeHtml(result.author || '')}</p>
         <div class="flex items-center gap-2 flex-wrap mt-auto mb-2">
           ${seeders}${leechers}${size}${format}${indexer}

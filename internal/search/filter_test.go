@@ -91,43 +91,57 @@ func TestTitleRelevanceScore(t *testing.T) {
 }
 
 func TestFilterAndSortResults(t *testing.T) {
-	t.Run("filters suspicious titles", func(t *testing.T) {
+	t.Run("demotes suspicious titles instead of dropping", func(t *testing.T) {
 		results := []models.SearchResult{
 			{Source: "annas", Title: "Good Book"},
 			{Source: "annas", Title: "Bad keygen exe"},
 		}
 		filtered := FilterAndSortResults(results, "book", 10000, 2000000000)
-		if len(filtered) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(filtered))
+		if len(filtered) != 2 {
+			t.Fatalf("expected 2 results (nothing dropped), got %d", len(filtered))
 		}
-		if filtered[0].Title != "Good Book" {
-			t.Errorf("expected Good Book, got %s", filtered[0].Title)
+		if filtered[0].Title != "Good Book" || filtered[0].Demoted {
+			t.Errorf("expected Good Book first and kept, got %+v", filtered[0])
+		}
+		if !filtered[1].Demoted || filtered[1].DemoteReason != "suspicious" {
+			t.Errorf("expected Bad demoted last with reason, got %+v", filtered[1])
 		}
 	})
 
-	t.Run("filters zero-seeder torrents", func(t *testing.T) {
+	t.Run("demotes zero-seeder torrents instead of dropping", func(t *testing.T) {
 		results := []models.SearchResult{
 			{Source: "torrent", Title: "Good Torrent", Seeders: 5, Size: 50000},
 			{Source: "torrent", Title: "Dead Torrent", Seeders: 0, Size: 50000},
 		}
 		filtered := FilterAndSortResults(results, "torrent", 10000, 2000000000)
-		if len(filtered) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(filtered))
+		if len(filtered) != 2 {
+			t.Fatalf("expected 2 results (nothing dropped), got %d", len(filtered))
+		}
+		if filtered[0].Title != "Good Torrent" || filtered[0].Demoted {
+			t.Errorf("expected Good Torrent first and kept, got %+v", filtered[0])
+		}
+		if !filtered[1].Demoted || filtered[1].DemoteReason != "no_seeders" {
+			t.Errorf("expected Dead demoted last with reason, got %+v", filtered[1])
 		}
 	})
 
-	t.Run("filters torrents outside size bounds", func(t *testing.T) {
+	t.Run("demotes torrents outside size bounds instead of dropping", func(t *testing.T) {
 		results := []models.SearchResult{
 			{Source: "torrent", Title: "Too Small", Seeders: 5, Size: 100},
 			{Source: "torrent", Title: "Just Right", Seeders: 5, Size: 500000},
 			{Source: "torrent", Title: "Too Big", Seeders: 5, Size: 5000000000},
 		}
 		filtered := FilterAndSortResults(results, "test", 10000, 2000000000)
-		if len(filtered) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(filtered))
+		if len(filtered) != 3 {
+			t.Fatalf("expected 3 results (nothing dropped), got %d", len(filtered))
 		}
-		if filtered[0].Title != "Just Right" {
-			t.Errorf("expected Just Right, got %s", filtered[0].Title)
+		if filtered[0].Title != "Just Right" || filtered[0].Demoted {
+			t.Errorf("expected Just Right first and kept, got %+v", filtered[0])
+		}
+		for _, r := range filtered[1:] {
+			if !r.Demoted || r.DemoteReason != "size" {
+				t.Errorf("expected demoted size reason at bottom, got %+v", r)
+			}
 		}
 	})
 
@@ -170,13 +184,33 @@ func TestFilterAndSortResults(t *testing.T) {
 		}
 	})
 
-	t.Run("ABB without abb_url and zero seeders filtered", func(t *testing.T) {
+	t.Run("ABB without abb_url and zero seeders demoted", func(t *testing.T) {
 		results := []models.SearchResult{
 			{Source: "audiobook", Title: "Dead Audiobook", Seeders: 0, AbbURL: ""},
 		}
 		filtered := FilterAndSortResults(results, "audiobook", 10000, 2000000000)
-		if len(filtered) != 0 {
-			t.Errorf("expected ABB without abb_url and 0 seeders to be filtered, got %d", len(filtered))
+		if len(filtered) != 1 {
+			t.Fatalf("expected 1 result kept (demoted), got %d", len(filtered))
+		}
+		if !filtered[0].Demoted || filtered[0].DemoteReason != "no_source" {
+			t.Errorf("expected demoted no_source, got %+v", filtered[0])
+		}
+	})
+
+	t.Run("demoted sink below kept even with more seeders", func(t *testing.T) {
+		results := []models.SearchResult{
+			{Source: "torrent", Title: "Huge Popular", Seeders: 100, Size: 5000000000},
+			{Source: "torrent", Title: "Niche Live", Seeders: 2, Size: 50000},
+		}
+		filtered := FilterAndSortResults(results, "test", 10000, 2000000000)
+		if len(filtered) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(filtered))
+		}
+		if filtered[0].Title != "Niche Live" || filtered[0].Demoted {
+			t.Errorf("expected kept result first, got %+v", filtered[0])
+		}
+		if !filtered[1].Demoted || filtered[1].DemoteReason != "size" {
+			t.Errorf("expected demoted result last despite 100 seeders, got %+v", filtered[1])
 		}
 	})
 }

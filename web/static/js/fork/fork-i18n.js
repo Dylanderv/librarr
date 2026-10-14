@@ -66,8 +66,7 @@ Object.assign(I18N.en, {
     search_failed: 'Search failed.',
 
     // Prowlarr advanced search
-    adv_toggle: 'Advanced',
-    adv_title: 'Prowlarr advanced search',
+    adv_toggle: 'Advanced',    adv_title: 'Prowlarr advanced search',
     adv_query_label: 'Prowlarr query override (empty = tab defaults)',
     adv_query_ph: 'e.g. berserk deluxe edition',
     adv_cats_label: 'Prowlarr categories (untick all = no filter)',
@@ -77,6 +76,15 @@ Object.assign(I18N.en, {
     adv_live: 'live categories',
     adv_fallback: 'default categories',
     adv_offline: 'categories unavailable',
+
+    // Demoted results (filtered out, shown at the bottom)
+    demote_language: 'Filtered: language',
+    demote_relevance: 'Low relevance',
+    demote_suspicious: 'Flagged title',
+    demote_no_seeders: 'No seeders',
+    demote_size: 'Outside size limits',
+    demote_no_source: 'No download source',
+    demote_generic: 'Filtered out',
 
     // Browse (filesystem library browser)
     browse_title: 'Browse',
@@ -298,6 +306,15 @@ Object.assign(I18N.ru, {
     adv_live: 'категории live',
     adv_fallback: 'категории по умолчанию',
     adv_offline: 'категории недоступны',
+
+    // Demoted results (filtered out, shown at the bottom)
+    demote_language: 'Отфильтровано: язык',
+    demote_relevance: 'Слабое совпадение',
+    demote_suspicious: 'Подозрительное название',
+    demote_no_seeders: 'Нет сидов',
+    demote_size: 'Вне лимитов размера',
+    demote_no_source: 'Нет источника',
+    demote_generic: 'Отфильтровано',
 });
 
 // app.js already ran applyLanguage() during init before this file loaded;

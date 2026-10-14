@@ -398,7 +398,9 @@ func (m *Manager) processResults(results []models.SearchResult, query, author st
 			}
 		}
 	}
-	return results
+	// Scoring re-mixes the order: sink demoted rows back to the bottom so a
+	// high score never resurfaces a filtered-out result above kept ones.
+	return sinkDemotedLast(results)
 }
 
 // GetSources returns all registered sources.
@@ -436,7 +438,9 @@ func (m *Manager) SourceMeta() []map[string]interface{} {
 	return meta
 }
 
-// FilterResults removes irrelevant, foreign-language, or suspicious results.
+// FilterResults demotes irrelevant, foreign-language, or suspicious results
+// instead of dropping them: demoted rows sink to the bottom of the list with
+// a reason, so the user never silently loses results.
 // Sources that naturally return non-English content (Flibusta, Z-Library) bypass
 // the foreign-language filter automatically — their results are always preserved.
 // The foreignLangFilter flag only affects sources that primarily return English content.
@@ -444,14 +448,13 @@ func FilterResults(results []models.SearchResult, query string, foreignLangFilte
 	var filtered []models.SearchResult
 	for _, r := range results {
 		if foreignLangFilter && isForeignTitle(r.Title) && !isMultilangSource(r.Source) {
-			continue
-		}
-		if !titleRelevant(r.Title, query) {
-			continue
+			demote(&r, DemoteLanguage)
+		} else if !titleRelevant(r.Title, query) {
+			demote(&r, DemoteRelevance)
 		}
 		filtered = append(filtered, r)
 	}
-	return filtered
+	return sinkDemotedLast(filtered)
 }
 
 // isMultilangSource returns true for sources that naturally return non-English content.

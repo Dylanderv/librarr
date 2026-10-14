@@ -404,6 +404,22 @@ function renderTableHead() {
   </tr></thead>`;
 }
 
+// Demoted badge: results the filters would previously have dropped render
+// dimmed at the bottom of the list with their reason.
+function demoteBadge(result) {
+  if (!result || !result.demoted) return '';
+  const labels = {
+    language: t('demote_language'),
+    relevance: t('demote_relevance'),
+    suspicious: t('demote_suspicious'),
+    no_seeders: t('demote_no_seeders'),
+    size: t('demote_size'),
+    no_source: t('demote_no_source'),
+  };
+  const label = labels[result.demote_reason] || result.demote_reason || t('demote_generic');
+  return `<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/60 text-amber-300" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+}
+
 function renderBookRow(result, index) {
   const coverHtml = result.cover_url
     ? `<img src="${escapeHtml(result.cover_url)}" alt="" class="h-12 w-9 object-cover rounded" loading="lazy" data-ph-title="${escapeHtml(result.title || '')}" data-ph-idx="${index}" data-ph-size="sm">`
@@ -415,7 +431,7 @@ function renderBookRow(result, index) {
   return `
     <tr class="border-b border-slate-800/60 hover:bg-slate-800/30">
       <td class="px-2 py-1.5">${coverHtml}</td>
-      <td class="px-2 py-1.5 max-w-xs"><span class="text-white line-clamp-2" title="${escapeHtml(result.title || '')}">${escapeHtml(result.title || 'Unknown')}</span></td>
+      <td class="px-2 py-1.5 max-w-xs"><span class="text-white line-clamp-2" title="${escapeHtml(result.title || '')}">${escapeHtml(result.title || 'Unknown')}</span> ${result.demoted ? demoteBadge(result) : ''}</td>
       <td class="px-2 py-1.5 text-slate-400 max-w-[10rem]"><span class="line-clamp-1">${escapeHtml(result.author || '')}</span></td>
       <td class="px-2 py-1.5 text-slate-400 whitespace-nowrap">${escapeHtml(laneLabel(laneKeyFor(result.source)))}</td>
       <td class="px-2 py-1.5 text-slate-500 uppercase whitespace-nowrap">${escapeHtml(result.format || '')}</td>
