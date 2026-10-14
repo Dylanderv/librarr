@@ -8,7 +8,6 @@ conftest.py) — no external network. Covers the full scope of a user:
 
 Every test also implicitly asserts a zero-JS-error journey (ui fixture).
 """
-
 import json
 import time
 
@@ -25,7 +24,6 @@ def api(page, path):
 
 # ── Boot, security posture, assets ─────────────────────────────────────────
 
-
 def test_boot_serves_ui_with_strict_csp(ui):
     page = ui["page"]
     resp = page.request.get(ui["base"] + "/")
@@ -38,12 +36,8 @@ def test_boot_serves_ui_with_strict_csp(ui):
         assert attr not in html, f"inline handler {attr} leaked back into index.html"
     assert "<script>" not in html, "inline script block leaked back into index.html"
 
-    for asset in (
-        "/static/js/app.js",
-        "/static/css/app.css",
-        "/static/js/vendor/tailwind.js",
-        "/static/fonts/inter-latin.woff2",
-    ):
+    for asset in ("/static/js/app.js", "/static/css/app.css",
+                  "/static/js/vendor/tailwind.js", "/static/fonts/inter-latin.woff2"):
         r = page.request.get(ui["base"] + asset)
         assert r.status == 200, f"{asset} -> {r.status}"
 
@@ -51,15 +45,13 @@ def test_boot_serves_ui_with_strict_csp(ui):
 def test_tailwind_and_font_render_offline(ui):
     page = ui["page"]
     bg = page.evaluate(
-        "() => getComputedStyle(document.querySelector('[class*=bg-slate]')).backgroundColor"
-    )
+        "() => getComputedStyle(document.querySelector('[class*=bg-slate]')).backgroundColor")
     assert bg not in ("", "rgba(0, 0, 0, 0)"), "Tailwind runtime produced no styles"
     font = page.evaluate("() => getComputedStyle(document.body).fontFamily")
     assert "Inter" in font
 
 
 # ── Navigation via event delegation ─────────────────────────────────────────
-
 
 def test_all_tabs_switch(ui):
     page = ui["page"]
@@ -70,7 +62,6 @@ def test_all_tabs_switch(ui):
 
 
 # ── Search / sort / the data-key contract ───────────────────────────────────
-
 
 @pytest.fixture()
 def searched(ui):
@@ -116,9 +107,7 @@ def test_download_key_maps_to_rendered_result_in_every_sort_mode(searched):
     page.click('[data-action="setViewLayout"][data-arg="grid"]')
     page.wait_for_timeout(200)
     for mode in ("size", "seeders", "relevance"):
-        page.click(
-            f'#search-sort-buttons [data-action="setSortMode"][data-arg="{mode}"]'
-        )
+        page.click(f'#search-sort-buttons [data-action="setSortMode"][data-arg="{mode}"]')
         page.wait_for_timeout(300)
         assert page.evaluate(_MAPPING_PROBE) == [], f"grid sort={mode}"
 
@@ -127,9 +116,7 @@ def test_download_key_maps_to_rendered_result_in_every_sort_mode(searched):
     page.click('[data-action="setViewLayout"][data-arg="list"]')
     page.wait_for_timeout(200)
     for col in ("title", "size", "seeders"):
-        page.locator(
-            f'#search-results th[data-action="setSortMode"][data-arg="{col}"]'
-        ).first.click()
+        page.locator(f'#search-results th[data-action="setSortMode"][data-arg="{col}"]').first.click()
         page.wait_for_timeout(300)
         assert page.evaluate(_MAPPING_PROBE) == [], f"list sort={col}"
 
@@ -187,9 +174,8 @@ def test_download_completes_and_lands_in_library(searched):
             last = ours[0]
             if last.get("status") == "completed":
                 break
-            assert last.get("status") not in ("error", "dead_letter"), (
+            assert last.get("status") not in ("error", "dead_letter"), \
                 f"download failed: {json.dumps(last)}"
-            )
         time.sleep(2)  # gentle poll — 1/s trips the API rate limiter
     assert last and last.get("status") == "completed", f"job never completed: {last}"
 
@@ -206,7 +192,6 @@ def test_download_completes_and_lands_in_library(searched):
 
 # ── Wishlist CRUD through delegated row buttons ─────────────────────────────
 
-
 def test_wishlist_add_search_delete(ui):
     page = ui["page"]
     page.click('[data-action="switchTab"][data-arg="wishlist"]')
@@ -214,8 +199,7 @@ def test_wishlist_add_search_delete(ui):
     page.wait_for_timeout(200)
     first_input = page.evaluate(
         "() => [...document.querySelectorAll('#wishlist-form input')]"
-        ".find(i => i.type !== 'checkbox')?.id"
-    )
+        ".find(i => i.type !== 'checkbox')?.id")
     assert first_input, "wishlist form has no text input"
     page.fill(f"#{first_input}", "The Hobbit")
     page.click('[data-action="addWishlistItem"]')
@@ -234,8 +218,9 @@ def test_wishlist_add_search_delete(ui):
     assert page.locator('[data-action="deleteWishlistItem"]').count() == 0
 
 
-# ── Cover fallback via capture-phase error delegation ───────────────────────
+# ── Browse tab: filesystem-backed listing ───────────────────────────────────
 
+# ── Cover fallback via capture-phase error delegation ───────────────────────
 
 def test_broken_cover_falls_back_to_placeholder(ui):
     page = ui["page"]
@@ -251,7 +236,6 @@ def test_broken_cover_falls_back_to_placeholder(ui):
 
 
 # ── i18n toggle (re-renders DOM incl. converted anchor templates) ───────────
-
 
 def test_language_toggle_rerenders(ui):
     page = ui["page"]

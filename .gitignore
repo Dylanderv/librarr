@@ -22,6 +22,8 @@ e2e/.venv
 
 # Local verification output and dependency caches
 .verify-artifacts/
+
+# Fork-only
 .venv
 
 # macOS

@@ -24,6 +24,15 @@ type Config struct {
 	// headers (X-Forwarded-Proto) may be trusted. Empty = trust none.
 	TrustedProxies []string
 
+	// Fork extensions (fork-only settings, grouped here at the top of the
+	// struct so upstream additions at the end merge cleanly).
+	// KavitaPathMap remaps the absolute paths Kavita reports (as seen inside
+	// its container) to paths librarr can reach on its own filesystem, for the
+	// metadata-write feature. Format: comma-separated "fromPrefix:toPrefix"
+	// pairs, e.g. "/manga:/data/manga,/books:/data/books". Empty means the
+	// paths are assumed identical (shared mount).
+	KavitaPathMap string
+
 	// qBittorrent
 	QBUrl               string
 	QBUser              string
@@ -202,15 +211,6 @@ type Config struct {
 	// Author Monitoring
 	AuthorMonitorEnabled    bool
 	AuthorCheckIntervalDays int
-
-	// Fork extensions (fork-only settings kept out of the churned areas
-	// above so upstream additions merge cleanly).
-	// KavitaPathMap remaps the absolute paths Kavita reports (as seen inside
-	// its container) to paths librarr can reach on its own filesystem, for the
-	// metadata-write feature. Format: comma-separated "fromPrefix:toPrefix"
-	// pairs, e.g. "/manga:/data/manga,/books:/data/books". Empty means the
-	// paths are assumed identical (shared mount).
-	KavitaPathMap string
 }
 
 // Load reads configuration from environment variables with sensible defaults,
