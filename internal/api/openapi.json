@@ -252,6 +252,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "pq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search query override: exact query sent to Prowlarr instead of the tab-default variants. Empty = tab defaults."
+          },
+          {
+            "name": "pcat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
           }
         ],
         "responses": {
@@ -304,6 +322,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "pq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search query override: exact query sent to Prowlarr instead of the tab-default variants. Empty = tab defaults."
+          },
+          {
+            "name": "pcat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
           }
         ]
       }
@@ -319,6 +355,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "pq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search query override: exact query sent to Prowlarr instead of the tab-default variants. Empty = tab defaults."
+          },
+          {
+            "name": "pcat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
           }
         ]
       }

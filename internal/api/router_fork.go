@@ -29,4 +29,9 @@ func (s *Server) registerForkRoutes() {
 	s.mux.HandleFunc("POST /api/files/metadata/preview", requireAdmin(s.handleFilesMetadataPreview))
 	s.mux.HandleFunc("POST /api/files/metadata/apply", requireAdmin(s.handleFilesMetadataApply))
 	s.mux.HandleFunc("POST /api/files/kavita/scan", requireAdmin(s.handleFilesKavitaScan))
+
+	// Prowlarr advanced search: live category tree for the query/category
+	// override panel. Same auth as /api/search (no indexer secrets leak: only
+	// taxonomy IDs and names are exposed).
+	s.mux.HandleFunc("GET /api/prowlarr/categories", s.handleProwlarrCategories)
 }

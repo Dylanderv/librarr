@@ -104,6 +104,7 @@ func (p *Prowlarr) searchVariants(query string, categories []string) []prowlarrS
 		return []prowlarrSearchParams{
 			{query: query, categories: categories, limit: 50},
 			{query: query + " manga", categories: nil, limit: 30},
+			{query: query + " comic", categories: nil, limit: 30},
 		}
 	default:
 		return []prowlarrSearchParams{

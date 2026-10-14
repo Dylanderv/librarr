@@ -201,7 +201,27 @@
             <button data-action="setSortMode" data-arg="seeders" data-sort="seeders" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white" data-i18n="sort_seeders">Seeders</button>
             <button data-action="setSortMode" data-arg="size" data-sort="size" class="sort-btn text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white" data-i18n="sort_size">Size</button>
           </div>
+          <!-- FORK: Prowlarr advanced search (query/category override panel) -->
+          <button id="prowlarr-adv-toggle" data-action="toggleProwlarrAdv" class="text-xs px-3 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white" data-i18n="adv_toggle">Advanced</button>
         </div>
+      </div>
+
+      <!-- FORK: Prowlarr advanced search panel (wired in fork/prowlarr-adv.js) -->
+      <div id="prowlarr-adv-panel" class="hidden mb-4 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium text-white" data-i18n="adv_title">Prowlarr advanced search</span>
+          <span id="prowlarr-adv-live" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-500"></span>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1" data-i18n="adv_query_label">Prowlarr query override (empty = tab defaults)</label>
+          <input type="text" id="prowlarr-adv-query" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" data-i18n-placeholder="adv_query_ph">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1" data-i18n="adv_cats_label">Prowlarr categories (IDs, comma-separated)</label>
+          <input type="text" id="prowlarr-adv-cats" list="prowlarr-adv-cats-list" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+          <datalist id="prowlarr-adv-cats-list"></datalist>
+        </div>
+        <p class="text-xs text-slate-500" data-i18n="adv_hint">Overrides apply to Prowlarr only; other sources keep using your search text.</p>
       </div>
 
       <!-- Search skeleton (per-lane placeholder rows) -->
@@ -893,10 +913,11 @@
 <!-- FORK:SCRIPTS: app.js is the shared core; the fork-owned modules below only
      add features (search views, Browse, metadata editor) and must load after
      app.js. Bump ?v= on all of them together. -->
-<script src="/static/js/app.js?v=20261014"></script>
-<script src="/static/js/fork/fork-i18n.js?v=20261014"></script>
-<script src="/static/js/fork/search-view.js?v=20261014"></script>
-<script src="/static/js/fork/browse.js?v=20261014"></script>
-<script src="/static/js/fork/metadata-editor.js?v=20261014"></script>
+<script src="/static/js/app.js?v=20261014b"></script>
+<script src="/static/js/fork/fork-i18n.js?v=20261014b"></script>
+<script src="/static/js/fork/search-view.js?v=20261014b"></script>
+<script src="/static/js/fork/prowlarr-adv.js?v=20261014b"></script>
+<script src="/static/js/fork/browse.js?v=20261014b"></script>
+<script src="/static/js/fork/metadata-editor.js?v=20261014b"></script>
 </body>
 </html>

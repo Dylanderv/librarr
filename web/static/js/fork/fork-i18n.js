@@ -65,6 +65,17 @@ Object.assign(I18N.en, {
     no_matches: 'No matches found.',
     search_failed: 'Search failed.',
 
+    // Prowlarr advanced search
+    adv_toggle: 'Advanced',
+    adv_title: 'Prowlarr advanced search',
+    adv_query_label: 'Prowlarr query override (empty = tab defaults)',
+    adv_query_ph: 'e.g. berserk deluxe edition',
+    adv_cats_label: 'Prowlarr categories (IDs, comma-separated)',
+    adv_hint: 'Overrides apply to Prowlarr only; other sources keep using your search text.',
+    adv_live: 'live categories',
+    adv_fallback: 'default categories',
+    adv_offline: 'categories unavailable',
+
     // Browse (filesystem library browser)
     browse_title: 'Browse',
     // Library names are translated from the root id, never from the label the
@@ -272,6 +283,17 @@ Object.assign(I18N.ru, {
     searching: 'Поиск…',
     no_matches: 'Совпадений не найдено.',
     search_failed: 'Ошибка поиска.',
+
+    // Prowlarr advanced search
+    adv_toggle: 'Расширенный',
+    adv_title: 'Расширенный поиск Prowlarr',
+    adv_query_label: 'Запрос Prowlarr (пусто = настройки вкладки)',
+    adv_query_ph: 'напр. berserk deluxe edition',
+    adv_cats_label: 'Категории Prowlarr (ID через запятую)',
+    adv_hint: 'Переопределения действуют только на Prowlarr; остальные источники используют ваш текст.',
+    adv_live: 'категории live',
+    adv_fallback: 'категории по умолчанию',
+    adv_offline: 'категории недоступны',
 });
 
 // app.js already ran applyLanguage() during init before this file loaded;

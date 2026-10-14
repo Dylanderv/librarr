@@ -49,6 +49,7 @@ type Server struct {
 	wishlistClean  *scheduler.WishlistCleaner
 	seriesDetector *scheduler.SeriesDetector
 	authorMonitor  *scheduler.AuthorMonitor
+	prowlarrCaps   *search.ProwlarrCapsCache
 }
 
 // NewServer creates the HTTP API server.
@@ -122,6 +123,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		wishlistClean:  wishlistClean,
 		seriesDetector: seriesDet,
 		authorMonitor:  authorMon,
+		prowlarrCaps:   search.NewProwlarrCapsCache(cfg, &http.Client{Timeout: 15 * time.Second}, 24*time.Hour),
 	}
 
 	// Initialize OIDC handler if configured.

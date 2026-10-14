@@ -996,6 +996,8 @@ function switchSearchTab(tab) {
   const placeholders = { ebooks: t('search_placeholder'), audiobooks: t('search_placeholder_ab'), manga: t('search_placeholder_manga') };
   document.getElementById('search-input').placeholder = placeholders[tab] || 'Search...';
   document.getElementById('search-input').value = '';
+  // Fork-owned Prowlarr advanced panel follows the tab (lives in fork/prowlarr-adv.js).
+  if (typeof resetProwlarrAdvForTab === 'function') resetProwlarrAdvForTab(tab);
 }
 
 function switchLibraryTab(tab) {
@@ -1072,7 +1074,8 @@ async function doSearch(query) {
 }
 
 async function doJsonSearch(endpoint, query, gen, signal) {
-  const data = await apiJson(`${endpoint}?q=${encodeURIComponent(query)}`, { signal });
+  const adv = (typeof prowlarrAdvParams === 'function') ? prowlarrAdvParams(query) : '';
+  const data = await apiJson(`${endpoint}?q=${encodeURIComponent(query)}${adv}`, { signal });
   if (gen !== searchGeneration) return;
   // Degraded mode: no per-source metadata. Derive lanes from the results
   // themselves so the swimlane view still works.
@@ -1084,7 +1087,8 @@ async function doJsonSearch(endpoint, query, gen, signal) {
 // Fork-owned search views (swimlanes/table) live in fork/search-view.js (see FORK:SCRIPTS in web/index.html).
 
 async function doStreamingSearch(endpoint, query, gen, signal) {
-  const resp = await api(`${endpoint}?q=${encodeURIComponent(query)}`, {
+  const adv = (typeof prowlarrAdvParams === 'function') ? prowlarrAdvParams(query) : '';
+  const resp = await api(`${endpoint}?q=${encodeURIComponent(query)}${adv}`, {
     signal,
     headers: { Accept: 'text/event-stream' },
   });
@@ -2688,6 +2692,7 @@ const CLICK_ACTIONS = {
   setSortMode: el => setSortMode(el.dataset.arg),
   setViewLayout: el => setViewLayout(el.dataset.arg),
   setViewGroup: el => setViewGroup(el.dataset.arg),
+  toggleProwlarrAdv: () => toggleProwlarrAdvPanel(),
   toggleLane: el => toggleLane(el.dataset.arg),
   testConnection: el => testConnection(el.dataset.arg),
   saveIntegration: el => saveIntegration(el.dataset.arg),
