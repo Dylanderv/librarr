@@ -1338,6 +1338,17 @@
           }
         }
       }
+    },
+    "/api/prowlarr/categories": {
+      "get": {
+        "summary": "Prowlarr indexer category tree for the advanced search panel (fork)",
+        "description": "Live tree from Prowlarr (GET /api/v1/indexer/categories), cached 24h. live=false means the builtin fallback: the query override still works, only the suggestions are static. Exposes taxonomy IDs and names only, no indexer secrets.",
+        "responses": {
+          "200": {
+            "description": "Category tree with live flag"
+          }
+        }
+      }
     }
   },
   "components": {

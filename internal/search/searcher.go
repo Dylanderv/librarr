@@ -215,6 +215,173 @@ func (m *Manager) SearchStream(ctx context.Context, tab, query, author string) <
 	return updates
 }
 
+// advancedProwlarr is implemented by sources accepting per-request Prowlarr
+// overrides (currently *Prowlarr via SearchWithOptions).
+type advancedProwlarr interface {
+	SearchWithOptions(ctx context.Context, displayQuery string, opts ProwlarrOptions) ([]models.SearchResult, error)
+}
+
+// SearchAdvanced runs a query like SearchWithAuthor, except Prowlarr sources
+// receive opts (exact query override and/or category override) while every
+// other source gets the plain display query. Scoring and filtering still use
+// the display query, so relevance is unaffected by the override.
+//
+// Additive fork method: the fan-out below mirrors SearchWithAuthor on purpose
+// so the shared method stays untouched for upstream merges.
+func (m *Manager) SearchAdvanced(ctx context.Context, tab, query, author string, opts ProwlarrOptions) ([]models.SearchResult, int64) {
+	start := time.Now()
+	var (
+		mu      sync.Mutex
+		results []models.SearchResult
+		wg      sync.WaitGroup
+	)
+
+	for _, s := range m.sources {
+		if !s.Enabled() || s.SearchTab() != tab {
+			continue
+		}
+		if !m.health.CanSearch(s.Name()) {
+			slog.Warn("source circuit open, skipping", "source", s.Name())
+			continue
+		}
+
+		wg.Add(1)
+		go func(src Searcher) {
+			defer wg.Done()
+
+			searchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			var (
+				res []models.SearchResult
+				err error
+			)
+			if adv, ok := src.(advancedProwlarr); ok && opts.UseOverride {
+				res, err = adv.SearchWithOptions(searchCtx, query, opts)
+			} else {
+				res, err = src.Search(searchCtx, query)
+			}
+			if err != nil {
+				if ctx.Err() != nil {
+					slog.Debug("search canceled by client", "source", src.Name())
+					return
+				}
+				slog.Error("search failed", "source", src.Name(), "error", err)
+				m.health.RecordFailure(src.Name(), err.Error(), "search")
+				return
+			}
+
+			m.health.RecordSuccess(src.Name(), "search")
+
+			for i := range res {
+				if res[i].Source == "" {
+					res[i].Source = src.Name()
+				}
+			}
+
+			mu.Lock()
+			results = append(results, res...)
+			mu.Unlock()
+		}(s)
+	}
+
+	wg.Wait()
+
+	results = m.processResults(results, query, author)
+
+	elapsed := time.Since(start).Milliseconds()
+	return results, elapsed
+}
+
+// SearchStreamAdvanced is the streaming twin of SearchAdvanced: same routing
+// (override to Prowlarr, display query to the rest), same SSE update shape as
+// SearchStream. Additive fork method mirroring SearchStream.
+func (m *Manager) SearchStreamAdvanced(ctx context.Context, tab, query, author string, opts ProwlarrOptions) <-chan SourceSearchUpdate {
+	start := time.Now()
+	updates := make(chan SourceSearchUpdate, len(m.sources))
+
+	go func() {
+		defer close(updates)
+		var wg sync.WaitGroup
+		sendUpdate := func(update SourceSearchUpdate) bool {
+			select {
+			case updates <- update:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
+		for _, s := range m.sources {
+			if !s.Enabled() || s.SearchTab() != tab {
+				continue
+			}
+			if !m.health.CanSearch(s.Name()) {
+				slog.Warn("source circuit open, skipping", "source", s.Name())
+				if !sendUpdate(SourceSearchUpdate{
+					Source:       s.Name(),
+					CircuitOpen:  true,
+					Done:         true,
+					ElapsedMilli: time.Since(start).Milliseconds(),
+				}) {
+					return
+				}
+				continue
+			}
+
+			wg.Add(1)
+			go func(src Searcher) {
+				defer wg.Done()
+
+				searchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+
+				var (
+					res []models.SearchResult
+					err error
+				)
+				if adv, ok := src.(advancedProwlarr); ok && opts.UseOverride {
+					res, err = adv.SearchWithOptions(searchCtx, query, opts)
+				} else {
+					res, err = src.Search(searchCtx, query)
+				}
+				if err != nil {
+					if ctx.Err() != nil {
+						slog.Debug("search canceled by client", "source", src.Name())
+						return
+					}
+					slog.Error("search failed", "source", src.Name(), "error", err)
+					m.health.RecordFailure(src.Name(), err.Error(), "search")
+					sendUpdate(SourceSearchUpdate{
+						Source:       src.Name(),
+						Err:          err,
+						Done:         true,
+						ElapsedMilli: time.Since(start).Milliseconds(),
+					})
+					return
+				}
+
+				m.health.RecordSuccess(src.Name(), "search")
+				for i := range res {
+					if res[i].Source == "" {
+						res[i].Source = src.Name()
+					}
+				}
+				sendUpdate(SourceSearchUpdate{
+					Source:       src.Name(),
+					Results:      res,
+					Done:         true,
+					ElapsedMilli: time.Since(start).Milliseconds(),
+				})
+			}(s)
+		}
+
+		wg.Wait()
+	}()
+
+	return updates
+}
+
 // ProcessResults applies the same post-processing used by normal searches.
 func (m *Manager) ProcessResults(results []models.SearchResult, query, author string) []models.SearchResult {
 	return m.processResults(results, query, author)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/search"
 )
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,16 @@ func (s *Server) handleSearchTab(w http.ResponseWriter, r *http.Request, tab, ac
 		s.db.LogActivity(username, "search", query, fmt.Sprintf(activityFormat, query))
 	}
 	author := truncateSearchQuery(r.URL.Query().Get("author"))
-	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), tab, query, author)
+	prowOpts := parseProwlarrOptions(r)
+	var (
+		results []models.SearchResult
+		elapsed int64
+	)
+	if prowOpts.UseOverride {
+		results, elapsed = s.searchMgr.SearchAdvanced(r.Context(), tab, query, author, prowOpts)
+	} else {
+		results, elapsed = s.searchMgr.SearchWithAuthor(r.Context(), tab, query, author)
+	}
 	if results == nil {
 		results = []models.SearchResult{}
 	}
@@ -93,6 +103,13 @@ func (s *Server) handleSearchStreamTab(w http.ResponseWriter, r *http.Request, t
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	author := truncateSearchQuery(r.URL.Query().Get("author"))
+	prowOpts := parseProwlarrOptions(r)
+	var updates <-chan search.SourceSearchUpdate
+	if prowOpts.UseOverride {
+		updates = s.searchMgr.SearchStreamAdvanced(r.Context(), tab, query, author, prowOpts)
+	} else {
+		updates = s.searchMgr.SearchStream(r.Context(), tab, query, author)
+	}
 	var allResults []models.SearchResult
 	emit := func(event string, payload interface{}) bool {
 		data, err := json.Marshal(payload)
@@ -113,7 +130,7 @@ func (s *Server) handleSearchStreamTab(w http.ResponseWriter, r *http.Request, t
 		return
 	}
 
-	for update := range s.searchMgr.SearchStream(r.Context(), tab, query, author) {
+	for update := range updates {
 		if len(update.Results) > 0 {
 			allResults = append(allResults, update.Results...)
 		}
