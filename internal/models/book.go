@@ -29,6 +29,12 @@ type SearchResult struct {
 	Score          float64         `json:"score,omitempty"`
 	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
 
+	// Demotion fields (populated by search filters). Demoted results are
+	// never dropped: they sink to the bottom of the list with the reason
+	// why they would previously have been filtered out.
+	Demoted      bool   `json:"demoted,omitempty"`
+	DemoteReason string `json:"demote_reason,omitempty"`
+
 	// Open Library specific
 	IAIDs []string `json:"ia_ids,omitempty"`
 

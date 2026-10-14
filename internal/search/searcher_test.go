@@ -220,15 +220,20 @@ func TestFilterResults(t *testing.T) {
 		// Use empty query so titleRelevant passes for all titles.
 		filtered := FilterResults(input, "", true)
 		// flibusta and zlibrary results pass through (multilang sources bypass filter)
-		// "Russian Edition Book" from annas is filtered (foreign keyword + not multilang source)
+		// "Russian Edition Book" from annas is demoted (foreign keyword + not multilang source)
 		// "Good English Book" from annas passes
-		if len(filtered) != 3 {
-			t.Errorf("expected 3 results (2 multilang + 1 english), got %d", len(filtered))
+		if len(filtered) != 4 {
+			t.Errorf("expected 4 results (nothing dropped), got %d", len(filtered))
 		}
 		for _, r := range filtered {
 			if r.Source == "annas" && r.Title == "Russian Edition Book" {
-				t.Errorf("foreign title from non-multilang source should be filtered: %s", r.Title)
+				if !r.Demoted || r.DemoteReason != "language" {
+					t.Errorf("foreign title should be demoted with reason, got %+v", r)
+				}
 			}
+		}
+		if filtered[len(filtered)-1].Title != "Russian Edition Book" {
+			t.Errorf("expected demoted foreign title last, got %s", filtered[len(filtered)-1].Title)
 		}
 	})
 
@@ -238,11 +243,15 @@ func TestFilterResults(t *testing.T) {
 			{Source: "annas", Title: "Good English Book"},
 		}
 		filtered := FilterResults(input, "book", true)
-		if len(filtered) != 1 {
-			t.Errorf("expected 1 result (english only from non-multilang), got %d", len(filtered))
+		if len(filtered) != 2 {
+			t.Errorf("expected 2 results (nothing dropped), got %d", len(filtered))
 		}
-		if len(filtered) > 0 && filtered[0].Title != "Good English Book" {
-			t.Errorf("expected English book, got %s", filtered[0].Title)
+		if len(filtered) > 0 && (filtered[0].Title != "Good English Book" || filtered[0].Demoted) {
+			t.Errorf("expected English book first and kept, got %+v", filtered[0])
+		}
+		last := filtered[len(filtered)-1]
+		if !last.Demoted {
+			t.Errorf("expected demoted foreign title last, got %+v", last)
 		}
 	})
 }

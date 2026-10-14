@@ -62,6 +62,9 @@ func titleRelevanceScore(title, query string) int {
 	return 0
 }
 
+// FilterAndSortResults demotes (never drops) suspicious, unseeded, or
+// out-of-bounds results to the bottom of the list, deduplicates, and sorts:
+// demoted sink first, then title relevance, source priority, seeders, size.
 func FilterAndSortResults(results []models.SearchResult, query string, minSize, maxSize int64) []models.SearchResult {
 	var filtered []models.SearchResult
 	seenTitles := make(map[string]int) // normalized title -> index in filtered
@@ -69,41 +72,50 @@ func FilterAndSortResults(results []models.SearchResult, query string, minSize, 
 	for _, r := range results {
 		// Suspicious keyword filter.
 		if IsSuspicious(r.Title) {
-			continue
-		}
+			demote(&r, DemoteSuspicious)
+		} else {
+			// Torrent-specific filters.
+			isTorrent := r.Source == "torrent" || r.Source == "prowlarr_manga" || r.Source == "nyaa_manga" ||
+				r.Source == "tpb" || r.Source == "tpb_audiobook" ||
+				r.Source == "booktracker" || r.Source == "booktracker_audiobook"
+			isABB := r.Source == "audiobook"
 
-		// Torrent-specific filters.
-		isTorrent := r.Source == "torrent" || r.Source == "prowlarr_manga" || r.Source == "nyaa_manga" ||
-			r.Source == "tpb" || r.Source == "tpb_audiobook" ||
-			r.Source == "booktracker" || r.Source == "booktracker_audiobook"
-		isABB := r.Source == "audiobook"
+			if isTorrent {
+				// Seed count threshold (ABB may have 0 seeders with valid magnets).
+				if r.Seeders < 1 {
+					demote(&r, DemoteNoSeeders)
+				} else {
+					// Size bounds.
+					size := r.Size
+					if size == 0 {
+						size = int64(parseSizeBytes(r.SizeHuman))
+					}
+					if size > 0 && (size < minSize || size > maxSize) {
+						demote(&r, DemoteSize)
+					}
+				}
+			}
 
-		if isTorrent {
-			// Seed count threshold (ABB may have 0 seeders with valid magnets).
-			if r.Seeders < 1 {
-				continue
-			}
-			// Size bounds.
-			size := r.Size
-			if size == 0 {
-				size = int64(parseSizeBytes(r.SizeHuman))
-			}
-			if size > 0 && (size < minSize || size > maxSize) {
-				continue
-			}
-		}
-
-		if isABB {
-			// ABB may have 0 seeders with valid magnets from abb_url.
-			if r.Seeders < 1 && r.AbbURL == "" {
-				continue
+			if isABB {
+				// ABB may have 0 seeders with valid magnets from abb_url.
+				if r.Seeders < 1 && r.AbbURL == "" {
+					demote(&r, DemoteNoSource)
+				}
 			}
 		}
 
 		// Deduplication by first 60 chars of normalized title, keeping highest seeders.
-		if isTorrent || isABB {
+		if isTorrentOrABB(r.Source) {
 			norm := normalizeForDedup(r.Title)
 			if idx, exists := seenTitles[norm]; exists {
+				if filtered[idx].Demoted != r.Demoted {
+					// Never let a demoted copy hide a kept one: the
+					// non-demoted row wins regardless of seeders.
+					if !r.Demoted {
+						filtered[idx] = r
+					}
+					continue
+				}
 				if r.Seeders > filtered[idx].Seeders {
 					filtered[idx] = r
 				}
@@ -115,9 +127,14 @@ func FilterAndSortResults(results []models.SearchResult, query string, minSize, 
 		filtered = append(filtered, r)
 	}
 
-	// Sort: title relevance first, then source priority, then seeders, then size.
+	// Sort: demoted sink first, then title relevance, source priority,
+	// seeders, size.
 	sort.SliceStable(filtered, func(i, j int) bool {
-		// Primary: title relevance (exact match > all words > partial)
+		// Primary: kept rows before demoted ones.
+		if filtered[i].Demoted != filtered[j].Demoted {
+			return !filtered[i].Demoted
+		}
+		// Secondary: title relevance (exact match > all words > partial)
 		ri := titleRelevanceScore(filtered[i].Title, query)
 		rj := titleRelevanceScore(filtered[j].Title, query)
 		if ri != rj {
@@ -146,6 +163,18 @@ func FilterAndSortResults(results []models.SearchResult, query string, minSize, 
 	})
 
 	return filtered
+}
+
+// isTorrentOrABB reports whether title-deduplication applies to a source.
+func isTorrentOrABB(source string) bool {
+	switch source {
+	case "torrent", "prowlarr_manga", "nyaa_manga",
+		"tpb", "tpb_audiobook",
+		"booktracker", "booktracker_audiobook",
+		"audiobook":
+		return true
+	}
+	return false
 }
 
 func sourcePriority(r models.SearchResult) int {
