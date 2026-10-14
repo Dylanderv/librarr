@@ -4,10 +4,16 @@
     "title": "Librarr API",
     "description": "Self-hosted book, audiobook, and manga search and download manager — the *arr for books. The HTTP/JSON API powers both the SPA and any external tooling (CLI scripts, AI agents, *arr-family integrations).",
     "version": "1.x",
-    "license": {"name": "MIT", "identifier": "MIT"}
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
   },
   "servers": [
-    {"url": "http://localhost:5050", "description": "Default local install"}
+    {
+      "url": "http://localhost:5050",
+      "description": "Default local install"
+    }
   ],
   "components": {
     "securitySchemes": {
@@ -27,115 +33,156 @@
     "schemas": {
       "Error": {
         "type": "object",
-        "required": ["success", "error"],
+        "required": [
+          "success",
+          "error"
+        ],
         "properties": {
-          "success": {"type": "boolean", "enum": [false]},
-          "error":   {"type": "string"}
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
         }
       },
       "SearchResult": {
         "type": "object",
         "description": "A single search hit. Fields are populated per driver — direct-download drivers omit seeders/leechers; torrent drivers usually omit MD5.",
         "properties": {
-          "title":        {"type": "string"},
-          "author":       {"type": "string"},
-          "source":       {"type": "string", "description": "Driver identifier (e.g. annas, gutenberg, prowlarr)."},
-          "size":         {"type": "integer", "format": "int64"},
-          "size_human":   {"type": "string"},
-          "seeders":      {"type": "integer"},
-          "leechers":     {"type": "integer"},
-          "magnet_url":   {"type": "string"},
-          "download_url": {"type": "string", "format": "uri"},
-          "md5":          {"type": "string"},
-          "info_hash":    {"type": "string"},
-          "url":          {"type": "string", "format": "uri"},
-          "cover_url":    {"type": "string", "format": "uri"},
-          "format":       {"type": "string", "description": "epub, pdf, mobi, mp3, m4b, cbz, etc."},
-          "score":        {"type": "integer", "description": "0-100 confidence score."},
-          "media_type":   {"type": "string", "enum": ["ebook", "audiobook", "manga"]}
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "Driver identifier (e.g. annas, gutenberg, prowlarr)."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "size_human": {
+            "type": "string"
+          },
+          "seeders": {
+            "type": "integer"
+          },
+          "leechers": {
+            "type": "integer"
+          },
+          "magnet_url": {
+            "type": "string"
+          },
+          "download_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "md5": {
+            "type": "string"
+          },
+          "info_hash": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "cover_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "format": {
+            "type": "string",
+            "description": "epub, pdf, mobi, mp3, m4b, cbz, etc."
+          },
+          "score": {
+            "type": "integer",
+            "description": "0-100 confidence score."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "ebook",
+              "audiobook",
+              "manga"
+            ]
+          }
         }
       },
       "WishlistItem": {
         "type": "object",
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "properties": {
-          "id":         {"type": "integer", "format": "int64"},
-          "title":      {"type": "string"},
-          "author":     {"type": "string"},
-          "media_type": {"type": "string", "enum": ["ebook", "audiobook", "manga"]}
-        }
-      },
-      "FileMetadataFields": {
-        "type": "object",
-        "description": "Metadata of one file as read from its ComicInfo.xml (CBZ) or OPF (EPUB). Absent and empty are the same thing here.",
-        "properties": {
-          "title":        {"type": "string"},
-          "series":       {"type": "string"},
-          "series_index": {"type": "string"},
-          "summary":      {"type": "string"},
-          "publisher":    {"type": "string"},
-          "language":     {"type": "string"},
-          "isbn":         {"type": "string"},
-          "authors":      {"type": "array", "items": {"type": "string"}},
-          "genres":       {"type": "array", "items": {"type": "string"}},
-          "tags":         {"type": "array", "items": {"type": "string"}}
-        }
-      },
-      "FolderMergeRequest": {
-        "type": "object",
-        "description": "Payload shared by /api/files/merge/preview and /api/files/merge/apply — applying is 'preview again, then act', not a second code path. The plan is always recomputed server-side.",
-        "required": ["sources", "series_name"],
-        "properties": {
-          "sources":     {"type": "array", "minItems": 2, "maxItems": 100, "items": {"type": "string"}, "description": "Absolute paths of the folders to merge. They must all share the same parent."},
-          "series_name": {"type": "string", "description": "Target series name; sanitized into a single path segment under the shared parent"},
-          "volumes":     {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Volume number per file, keyed by \"<source folder name>/<file name>\". A value here overrides detection; a file absent from the map falls back to detection, and a file with no volume either way is left where it is."}
-        }
-      },
-      "FolderMergeRow": {
-        "type": "object",
-        "description": "One file of one selected folder. status is a key, not a sentence, so the reason is translatable.",
-        "properties": {
-          "key":           {"type": "string", "description": "\"<source folder name>/<file name>\" — the key to use in volumes"},
-          "folder":        {"type": "string"},
-          "name":          {"type": "string"},
-          "kind":          {"type": "string"},
-          "volume":        {"type": "integer"},
-          "volume_source": {"type": "string", "enum": ["manual", "detected", "none"]},
-          "target":        {"type": "string", "description": "Target file name inside the series folder"},
-          "status":        {"type": "string", "enum": ["move", "in_place", "no_volume", "collision", "exists"], "description": "Only \"move\" is applied. in_place: already in the target folder under that name. no_volume: nothing supplied and nothing detected, never guessed. collision: several selected files claim that name, so none is moved. exists: a file not part of the move already has that name in the target folder."}
-        }
-      },
-      "FileMetadataRequest": {
-        "type": "object",
-        "description": "Payload shared by /api/files/metadata/preview and /api/files/metadata/apply — applying is 'preview again, then act', not a second code path.",
-        "required": ["path", "fields"],
-        "properties": {
-          "path":      {"type": "string", "description": "Absolute path of a file or a folder under a library root"},
-          "recursive": {"type": "boolean", "default": false, "description": "Folders only: also cover subfolders"},
-          "mode":      {"type": "string", "enum": ["set", "append"], "default": "set", "description": "Only affects the list fields (authors, genres, tags); scalars are always replaced"},
-          "fields":    {"allOf": [{"$ref": "#/components/schemas/FileMetadataFields"}], "description": "Only the fields present are written. title, series_index and isbn identify a single volume and are refused when path is a folder."}
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "ebook",
+              "audiobook",
+              "manga"
+            ]
+          }
         }
       },
       "PaginatedList": {
         "type": "object",
         "description": "Standard list response shape used across /api/library, /api/activity, etc.",
         "properties": {
-          "items":  {"type": "array", "items": {"type": "object"}},
-          "total":  {"type": "integer"},
-          "limit":  {"type": "integer"},
-          "offset": {"type": "integer"}
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
         }
       }
     }
   },
-  "security": [{"apiKey": []}, {"session": []}],
+  "security": [
+    {
+      "apiKey": []
+    },
+    {
+      "session": []
+    }
+  ],
   "paths": {
     "/api/health": {
       "get": {
         "summary": "Health check",
         "description": "Liveness probe. Returns 200 if the binary is running. No auth required.",
         "security": [],
-        "responses": {"200": {"description": "OK"}}
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/openapi.json": {
@@ -146,25 +193,66 @@
         "responses": {
           "200": {
             "description": "OpenAPI 3.1 document",
-            "content": {"application/json": {"schema": {"type": "object"}}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/status": {
-      "get": {"summary": "Current auth state"}
+      "get": {
+        "summary": "Current auth state"
+      }
     },
-    "/api/login":  {"post": {"summary": "Session login", "security": []}},
-    "/api/login/totp": {"post": {"summary": "TOTP 2FA verification step", "security": []}},
-    "/api/logout": {"post": {"summary": "End session"}},
-    "/api/register": {"post": {"summary": "Register new user (requires invite code when configured)", "security": []}},
-
+    "/api/login": {
+      "post": {
+        "summary": "Session login",
+        "security": []
+      }
+    },
+    "/api/login/totp": {
+      "post": {
+        "summary": "TOTP 2FA verification step",
+        "security": []
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "summary": "End session"
+      }
+    },
+    "/api/register": {
+      "post": {
+        "summary": "Register new user (requires invite code when configured)",
+        "security": []
+      }
+    },
     "/api/search": {
       "get": {
         "summary": "Search ebooks across all configured sources",
         "parameters": [
-          {"name": "q",      "in": "query", "required": true,  "schema": {"type": "string"}, "description": "Search query."},
-          {"name": "author", "in": "query", "required": false, "schema": {"type": "string"}}
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search query."
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -174,9 +262,21 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "results":        {"type": "array", "items": {"$ref": "#/components/schemas/SearchResult"}},
-                    "search_time_ms": {"type": "integer"},
-                    "sources":        {"type": "array", "items": {"type": "object"}}
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SearchResult"
+                      }
+                    },
+                    "search_time_ms": {
+                      "type": "integer"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
                   }
                 }
               }
@@ -189,321 +289,633 @@
       "get": {
         "summary": "Search audiobooks",
         "parameters": [
-          {"name": "q",      "in": "query", "required": true,  "schema": {"type": "string"}},
-          {"name": "author", "in": "query", "required": false, "schema": {"type": "string"}}
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
     "/api/search/manga": {
       "get": {
         "summary": "Search manga",
-        "parameters": [{"name": "q", "in": "query", "required": true, "schema": {"type": "string"}}]
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
-
     "/api/sources": {
       "get": {
         "summary": "List configured search sources + health",
         "description": "Returns each registered driver with enabled state, circuit-breaker status, last success/fail counters. Useful for AI agents debugging why a source isn't returning results."
       }
     },
-
     "/api/library": {
       "get": {
         "summary": "List ebooks in the library",
         "parameters": [
-          {"name": "limit",  "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50}},
-          {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "default": 0}},
-          {"name": "type",   "in": "query", "schema": {"type": "string", "enum": ["ebook", "audiobook", "manga"]}},
-          {"name": "tag",    "in": "query", "schema": {"type": "string"}, "description": "Filter by tag name."},
-          {"name": "q",      "in": "query", "schema": {"type": "string"}, "description": "Filter on title, author, file path or source id."}
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ebook",
+                "audiobook",
+                "manga"
+              ]
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by tag name."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter on title, author, file path or source id."
+          }
         ],
         "responses": {
           "200": {
             "description": "Paginated library items",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PaginatedList"}}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedList"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/api/library/audiobooks": {"get": {"summary": "List audiobooks (proxied from Audiobookshelf when configured)", "parameters": [{"name": "q", "in": "query", "schema": {"type": "string"}, "description": "Filter on title, author, file path or source id (local rows only)."}]}},
-    "/api/library/manga":      {"get": {"summary": "List manga recorded in librarr's own library (not a Kavita mirror)", "parameters": [{"name": "q", "in": "query", "schema": {"type": "string"}, "description": "Filter on title, author, file path or source id."}]}},
-    "/api/library/manga/series/{id}/metadata": {"get": {"summary": "Get a Kavita series' current metadata (admin; for pre-filling the bulk editor)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]}},
-    "/api/library/metadata/bulk": {"post": {"summary": "Bulk-write metadata into the files of the selected Kavita series (EPUB OPF / CBZ ComicInfo.xml), then rescan (admin)", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["series_ids"], "properties": {"series_ids": {"type": "array", "items": {"type": "integer"}}, "mode": {"type": "string", "enum": ["set", "append"], "description": "How authors/genres/tags lists are applied"}, "fields": {"type": "object", "properties": {"title": {"type": "string"}, "series": {"type": "string"}, "series_index": {"type": "string"}, "summary": {"type": "string"}, "publisher": {"type": "string"}, "language": {"type": "string"}, "isbn": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}}, "genres": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}}}, "rename": {"type": "string", "enum": ["none", "folder", "folder_and_files"], "default": "none", "description": "Realign folder/file names with the series field being written; requires fields.series"}}}}}}}},
-    "/api/library/metadata/rename-preview": {"post": {"summary": "Preview the folder/file renames a bulk metadata edit would perform, without touching anything (admin)", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["series_ids", "series_name"], "properties": {"series_ids": {"type": "array", "items": {"type": "integer"}}, "series_name": {"type": "string"}, "mode": {"type": "string", "enum": ["none", "folder", "folder_and_files"]}}}}}}, "responses": {"200": {"description": "Planned changes", "content": {"application/json": {"schema": {"type": "object", "properties": {"plans": {"type": "array", "items": {"type": "object", "properties": {"series_id": {"type": "integer"}, "series_name": {"type": "string"}, "folder_from": {"type": "string"}, "folder_to": {"type": "string"}, "files": {"type": "array", "items": {"type": "object", "properties": {"from": {"type": "string"}, "to": {"type": "string"}}}}, "skipped": {"type": "array", "items": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}, "errors": {"type": "array", "items": {"type": "string"}}}}}}}}}}}}},
-    "/api/metadata/search": {"get": {"summary": "Search an online metadata source (AniList for manga, Open Library for books) for candidates to pre-fill the bulk editor (admin)", "parameters": [{"name": "q", "in": "query", "required": true, "schema": {"type": "string"}}, {"name": "type", "in": "query", "required": false, "schema": {"type": "string", "enum": ["manga", "book"], "default": "manga"}}], "responses": {"200": {"description": "Candidate matches", "content": {"application/json": {"schema": {"type": "object", "properties": {"candidates": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}}, "genres": {"type": "array", "items": {"type": "string"}}, "tags": {"type": "array", "items": {"type": "string"}}, "year": {"type": "string"}, "publisher": {"type": "string"}, "language": {"type": "string"}, "cover_url": {"type": "string"}, "site_url": {"type": "string"}}}}}}}}}}}},
-    "/api/library/book/{id}":      {"delete": {"summary": "Remove an ebook from the library", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]}},
-    "/api/library/audiobook/{id}": {"delete": {"summary": "Remove an audiobook", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]}},
-    "/api/library/manga/{id}":     {"delete": {"summary": "Remove a manga entry from the library; the file on disk is left alone. Releases the duplicate check that rejects re-downloads with 409.", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]}},
-    "/api/library/{id}/tags":      {"get":  {"summary": "List tags for a library item"}, "post": {"summary": "Add a tag to a library item"}},
-    "/api/library/{id}/tags/{tagId}": {"delete": {"summary": "Remove a tag from a library item"}},
-
-    "/api/files/roots": {
+    "/api/library/audiobooks": {
       "get": {
-        "summary": "List the browsable library roots — MANGA_DIR / EBOOK_DIR / AUDIOBOOK_DIR, keeping only directories that exist (admin)",
-        "description": "Entry point of the /api/files/* surface, which browses the filesystem directly and never queries Kavita. Every other /api/files/* path takes an absolute path that must sit under one of these roots.",
-        "responses": {
-          "200": {"description": "Configured libraries", "content": {"application/json": {"schema": {"type": "object", "properties": {"roots": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "enum": ["manga", "ebooks", "audiobooks"]}, "label": {"type": "string"}, "path": {"type": "string", "description": "Absolute path with symlinks resolved"}}}}, "kavita": {"type": "boolean", "description": "Whether POST /api/files/kavita/scan is usable on this instance"}}}}}}
-        }
+        "summary": "List audiobooks (proxied from Audiobookshelf when configured)",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter on title, author, file path or source id (local rows only)."
+          }
+        ]
       }
     },
-    "/api/files/list": {
+    "/api/library/manga": {
       "get": {
-        "summary": "List one directory of one library — a single non-recursive ReadDir (admin)",
-        "description": "Cached in memory for ~30s and invalidated for any folder librarr writes to. No archive is opened: metadata is read on demand through /api/files/metadata.",
-        "parameters": [{"name": "path", "in": "query", "required": true, "schema": {"type": "string"}, "description": "Absolute path of a directory under a library root"}],
-        "responses": {
-          "200": {"description": "Directory listing", "content": {"application/json": {"schema": {"type": "object", "properties": {"root": {"type": "string"}, "root_label": {"type": "string"}, "root_path": {"type": "string"}, "path": {"type": "string"}, "is_root": {"type": "boolean"}, "parent": {"type": "string", "description": "Empty on a library root"}, "segments": {"type": "array", "description": "Breadcrumb below the root", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}}}}, "entries": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "is_dir": {"type": "boolean"}, "size": {"type": "integer"}, "modified": {"type": "string", "format": "date-time"}, "kind": {"type": "string", "enum": ["cbz", "epub", "pdf", "cbr", "audio", "other"], "description": "Empty for directories"}, "editable": {"type": "boolean", "description": "librarr can write metadata into it (CBZ and EPUB only)"}}}}}}}}},
-          "400": {"description": "Path missing, relative, or not a directory"},
-          "403": {"description": "Path outside the configured libraries"},
-          "404": {"description": "Directory not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+        "summary": "List manga recorded in librarr's own library (not a Kavita mirror)",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter on title, author, file path or source id."
+          }
+        ]
       }
     },
-    "/api/files/rename/preview": {
-      "post": {
-        "summary": "Preview the renaming of a folder and its files, without touching anything (admin)",
-        "description": "Every file of the folder is returned, including those that will not move, so nothing is silently left out. A volume number is never guessed: a file with no detected and no supplied number comes back with status no_volume and is skipped.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "series_name", "mode"], "properties": {"path": {"type": "string", "description": "Absolute path of the folder, never a bare library root"}, "series_name": {"type": "string", "description": "Target series name; the UI pre-fills it with the current folder name"}, "mode": {"type": "string", "enum": ["folder", "folder_and_files"], "description": "Required: an absent or none mode is refused with 400"}, "volumes": {"type": "object", "description": "Manual volume numbers keyed by the file's current base name; overrides detection", "additionalProperties": {"type": "integer"}}}}}}},
-        "responses": {
-          "200": {"description": "Planned renames", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "series_name": {"type": "string"}, "mode": {"type": "string"}, "folder_from": {"type": "string"}, "folder_to": {"type": "string"}, "files": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "volume": {"type": "integer"}, "volume_source": {"type": "string", "enum": ["manual", "detected", "none"]}, "target": {"type": "string"}, "status": {"type": "string", "enum": ["rename", "unchanged", "no_volume", "collision", "folder_only"]}}}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Invalid JSON body, missing series name, missing or unknown rename mode, or path is not a directory"},
-          "403": {"description": "Path outside the libraries, or a bare library root"},
-          "404": {"description": "Folder not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+    "/api/library/book/{id}": {
+      "delete": {
+        "summary": "Remove an ebook from the library",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
-    "/api/files/rename/apply": {
-      "post": {
-        "summary": "Apply the folder/file renaming (admin)",
-        "description": "Same payload as /api/files/rename/preview. The plan is always recomputed server-side from the payload — a plan sent by the client is never applied. If the folder itself cannot be moved, its files are still renamed in place.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "series_name", "mode"], "properties": {"path": {"type": "string"}, "series_name": {"type": "string"}, "mode": {"type": "string", "enum": ["folder", "folder_and_files"]}, "volumes": {"type": "object", "additionalProperties": {"type": "integer"}}}}}}},
-        "responses": {
-          "200": {"description": "Result; per-file failures are collected in errors rather than aborting the batch", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Where the folder now lives, to reopen the listing on"}, "renamed": {"type": "integer"}, "errors": {"type": "array", "items": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Invalid JSON body, missing series name, missing or unknown rename mode, or path is not a directory"},
-          "403": {"description": "Path outside the libraries, or a bare library root"},
-          "404": {"description": "Folder not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+    "/api/library/audiobook/{id}": {
+      "delete": {
+        "summary": "Remove an audiobook",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
-    "/api/files/merge/preview": {
-      "post": {
-        "summary": "Show what merging several volume folders into one series folder would do (admin)",
-        "description": "Torrents produce one folder per volume, Kavita wants one folder per series. Distinct from /api/files/rename/*, which still refuses an existing target folder. Constraints: at least two folders, all sharing the same parent (scattered folders are refused), only their direct files move, subfolders stay where they are. The target is <parent>/<sanitized series name>, which may already exist or be one of the selected folders. volumes is keyed by \"<source folder name>/<file name>\" because two volume folders often hold identically named files.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FolderMergeRequest"}}}},
-        "responses": {
-          "200": {"description": "One row per file of every selected folder, with the target name and a status key", "content": {"application/json": {"schema": {"type": "object", "properties": {"parent": {"type": "string"}, "series_name": {"type": "string"}, "target": {"type": "string"}, "target_exists": {"type": "boolean"}, "folders": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "is_target": {"type": "boolean"}, "files": {"type": "integer"}, "subfolders": {"type": "array", "items": {"type": "string"}, "description": "Left where they are; a folder holding one is never removed"}}}}, "files": {"type": "array", "items": {"$ref": "#/components/schemas/FolderMergeRow"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Invalid JSON body, missing series name, fewer than two folders, more than 100 folders, the same folder twice, folders that are not siblings, a path that is not a folder, or more than 2000 files"},
-          "403": {"description": "A path outside the libraries, or a bare library root"},
-          "404": {"description": "One of the folders was not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+    "/api/library/manga/{id}": {
+      "delete": {
+        "summary": "Remove a manga entry from the library; the file on disk is left alone. Releases the duplicate check that rejects re-downloads with 409.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
-    "/api/files/merge/apply": {
-      "post": {
-        "summary": "Move the files of several sibling folders into one series folder (admin)",
-        "description": "Same payload as /api/files/merge/preview, recomputed server-side. Only rows whose status is \"move\" are applied: a collision or a name already taken in the target is never overwritten. The target folder is created if missing, with no hard-coded mode so the umask decides. A source folder is removed only when os.Remove succeeds on it, i.e. only when it is empty — never recursively; one that survives is reported with what it still holds, hidden entries (@eaDir, dotfiles) included, since those are exactly why a folder that looked empty in the listing refuses to go.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FolderMergeRequest"}}}},
-        "responses": {
-          "200": {"description": "Result; per-file failures are collected rather than aborting the batch", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string", "description": "The target folder, to reopen the listing on"}, "moved": {"type": "integer"}, "skipped": {"type": "array", "description": "Rows that were not applied, with the same status keys as the preview", "items": {"$ref": "#/components/schemas/FolderMergeRow"}}, "removed_folders": {"type": "array", "items": {"type": "string"}}, "kept_folders": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "reason": {"type": "string", "enum": ["not_empty", "remove_failed"]}, "remaining": {"type": "array", "items": {"type": "string"}, "description": "Up to 20 entry names, hidden ones included"}}}}, "errors": {"type": "array", "items": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Same refusals as the preview"},
-          "403": {"description": "A path outside the libraries, or a bare library root"},
-          "404": {"description": "One of the folders was not found"},
-          "500": {"description": "The target folder could not be created"},
-          "503": {"description": "No library directory is configured"}
-        }
-      }
-    },
-    "/api/files/rename/file": {
-      "post": {
-        "summary": "Rename a single file to a free-form name (admin)",
-        "description": "The name is sanitized and the original extension is always kept: a typed \"Berserk.exe\" on a .cbz becomes \"Berserk.exe.cbz\" rather than a file Kavita can no longer read.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["path", "new_name"], "properties": {"path": {"type": "string", "description": "Absolute path of the file"}, "new_name": {"type": "string", "description": "New name, with or without the extension"}}}}}},
-        "responses": {
-          "200": {"description": "Renamed", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}}}}}},
-          "400": {"description": "Invalid JSON body, empty name, unchanged name, or path is a directory"},
-          "403": {"description": "Path outside the libraries, or a bare library root"},
-          "404": {"description": "File not found"},
-          "409": {"description": "A file already has the target name"},
-          "503": {"description": "No library directory is configured"}
-        }
-      }
-    },
-    "/api/files/metadata": {
+    "/api/library/{id}/tags": {
       "get": {
-        "summary": "Read the metadata one file currently holds (admin)",
-        "description": "Opens the archive, so it is meant to be called when a file panel is opened, not for every row of a listing. A non-editable format (PDF, CBR, audio) answers 200 with editable=false and a reason key rather than an error.",
-        "parameters": [{"name": "path", "in": "query", "required": true, "schema": {"type": "string"}}],
-        "responses": {
-          "200": {"description": "Current metadata", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "reason": {"type": "string", "enum": ["pdf_ignored_by_kavita", "cbr_rar_archive", "audio_unsupported", "format_unsupported"], "description": "Present only when editable is false"}, "fields": {"$ref": "#/components/schemas/FileMetadataFields"}}}}}},
-          "400": {"description": "Path missing, relative, or path is a directory"},
-          "403": {"description": "Path outside the configured libraries"},
-          "404": {"description": "File not found"},
-          "503": {"description": "No library directory is configured"}
-        }
-      }
-    },
-    "/api/files/metadata/preview": {
+        "summary": "List tags for a library item"
+      },
       "post": {
-        "summary": "Show what a metadata edit would change, file by file, without writing (admin)",
-        "description": "Values are replaced, not merged (mode append only concerns the list fields), so the preview is what makes the overwrite visible before it happens. title, series_index and isbn identify a single volume and are rejected when path is a directory. At most 500 files are inspected; beyond that truncated is true.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FileMetadataRequest"}}}},
-        "responses": {
-          "200": {"description": "Per-file diff", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "is_dir": {"type": "boolean"}, "recursive": {"type": "boolean"}, "files": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "kind": {"type": "string"}, "editable": {"type": "boolean"}, "status": {"type": "string"}, "reason": {"type": "string"}, "error": {"type": "string"}, "changes": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "current": {"type": "string"}, "target": {"type": "string"}, "changed": {"type": "boolean"}}}}}}}, "inspected": {"type": "integer"}, "limit": {"type": "integer"}, "truncated": {"type": "boolean"}, "notices": {"type": "array", "description": "Informational outcomes, never failures", "items": {"type": "object", "properties": {"key": {"type": "string"}, "count": {"type": "integer"}}}}, "errors": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Invalid JSON body, no field supplied, or a per-volume field (title, series_index, isbn) targeted at a directory"},
-          "403": {"description": "Path outside the libraries, or a bare library root"},
-          "404": {"description": "Path not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+        "summary": "Add a tag to a library item"
       }
     },
-    "/api/files/metadata/apply": {
-      "post": {
-        "summary": "Write metadata into a file, or into every file of a folder (admin)",
-        "description": "Same payload as /api/files/metadata/preview, recomputed server-side. CBZ get a patched ComicInfo.xml, EPUB a patched OPF; unsupported formats are counted, not failed. A file that fails does not stop the batch — its error is collected.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FileMetadataRequest"}}}},
-        "responses": {
-          "200": {"description": "Result", "content": {"application/json": {"schema": {"type": "object", "properties": {"path": {"type": "string"}, "written": {"type": "integer"}, "unchanged": {"type": "integer"}, "unsupported": {"type": "integer"}, "inspected": {"type": "integer"}, "limit": {"type": "integer"}, "truncated": {"type": "boolean"}, "notices": {"type": "array", "items": {"type": "object", "properties": {"key": {"type": "string"}, "count": {"type": "integer"}}}}, "errors": {"type": "array", "items": {"type": "string"}}}}}}},
-          "400": {"description": "Invalid JSON body, no field supplied, or a per-volume field targeted at a directory"},
-          "403": {"description": "Path outside the libraries, or a bare library root"},
-          "404": {"description": "Path not found"},
-          "503": {"description": "No library directory is configured"}
-        }
+    "/api/library/{id}/tags/{tagId}": {
+      "delete": {
+        "summary": "Remove a tag from a library item"
       }
     },
-    "/api/files/kavita/scan": {
-      "post": {
-        "summary": "Ask Kavita to rescan its libraries (admin)",
-        "description": "Manual only: no rename or metadata write triggers a scan, so a session of many small edits costs one scan instead of one per edit. SCOPE: the scan is targeted. librarr lists Kavita's libraries, translates each library's folders back to local paths through KAVITA_PATH_MAP, and scans those that overlap the requested root (in either direction — a Kavita library may sit under the root or contain it). Libraries are never matched by name. Several libraries can match one root and all of them are scanned; when none match, the request fails with 409 and a detail naming the local root and the Kavita paths compared.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["root"], "properties": {"root": {"type": "string", "enum": ["manga", "ebooks", "audiobooks"]}}}}}},
-        "responses": {
-          "200": {"description": "Scan requested", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["requested"]}, "root": {"type": "string"}, "libraries": {"type": "array", "description": "The Kavita libraries actually scanned", "items": {"type": "object", "properties": {"id": {"type": "integer"}, "name": {"type": "string"}}}}}}}}},
-          "400": {"description": "Invalid JSON body or missing root"},
-          "404": {"description": "Unknown library root"},
-          "409": {"description": "No Kavita library maps to this root; detail names the local root and the Kavita paths compared", "content": {"application/json": {"schema": {"type": "object", "properties": {"success": {"type": "boolean"}, "error": {"type": "string"}, "detail": {"type": "string"}}}}}},
-          "502": {"description": "Kavita refused or could not be reached; detail carries Kavita's HTTP status and reason, never an internal URL or token", "content": {"application/json": {"schema": {"type": "object", "properties": {"success": {"type": "boolean"}, "error": {"type": "string"}, "detail": {"type": "string"}}}}}},
-          "503": {"description": "Kavita is not configured, or no library directory is configured"}
-        }
-      }
-    },
-
     "/api/wishlist": {
-      "get":  {"summary": "List wishlist items"},
+      "get": {
+        "summary": "List wishlist items"
+      },
       "post": {
         "summary": "Add a wishlist item",
         "requestBody": {
           "required": true,
-          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WishlistItem"}}}
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WishlistItem"
+              }
+            }
+          }
         },
         "responses": {
-          "201": {"description": "Created"},
-          "400": {"description": "Validation error", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/wishlist/{id}": {
       "delete": {
         "summary": "Delete a wishlist item",
-        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}]
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
-
     "/api/requests": {
-      "get":  {"summary": "List requests"},
-      "post": {"summary": "Create a request"}
+      "get": {
+        "summary": "List requests"
+      },
+      "post": {
+        "summary": "Create a request"
+      }
     },
-    "/api/requests/{id}":          {"get": {"summary": "Get a request"}, "delete": {"summary": "Delete a request"}},
-    "/api/requests/{id}/search":   {"post": {"summary": "Trigger a search for a request"}},
-    "/api/requests/{id}/download": {"post": {"summary": "Trigger a download for a request"}},
-
+    "/api/requests/{id}": {
+      "get": {
+        "summary": "Get a request"
+      },
+      "delete": {
+        "summary": "Delete a request"
+      }
+    },
+    "/api/requests/{id}/search": {
+      "post": {
+        "summary": "Trigger a search for a request"
+      }
+    },
+    "/api/requests/{id}/download": {
+      "post": {
+        "summary": "Trigger a download for a request"
+      }
+    },
     "/api/downloads": {
-      "get": {"summary": "List active and recent downloads"}
+      "get": {
+        "summary": "List active and recent downloads"
+      }
     },
-    "/api/downloads/torrent/{hash}": {"delete": {"summary": "Remove a torrent download"}},
-    "/api/downloads/novel/{jobID}":  {"delete": {"summary": "Remove a novel download job"}},
-    "/api/downloads/jobs/{id}/retry": {"post": {"summary": "Retry a failed download"}},
-    "/api/downloads/clear":           {"post": {"summary": "Clear finished downloads"}},
-
-    "/api/quality-profiles":       {"get": {"summary": "List quality profiles"}, "post": {"summary": "Create quality profile"}},
-    "/api/quality-profiles/{id}":  {"delete": {"summary": "Delete quality profile"}},
-    "/api/quality-profiles/default": {"get": {"summary": "Default profile"}},
-    "/api/release-profiles":       {"get": {"summary": "List release profiles"}, "post": {"summary": "Create"}},
-    "/api/release-profiles/{id}":  {"delete": {"summary": "Delete release profile"}},
-    "/api/blocklist":              {"get": {"summary": "List blocklist entries"}, "post": {"summary": "Add an entry"}},
-    "/api/blocklist/{id}":         {"delete": {"summary": "Remove an entry"}},
-    "/api/tags":                   {"get": {"summary": "List tags"}, "post": {"summary": "Create a tag"}},
-    "/api/tags/{id}":              {"delete": {"summary": "Delete a tag"}},
-
-    "/api/users":                  {"get": {"summary": "List users (admin only)"}},
-    "/api/users/{id}":             {
-      "patch":  {"summary": "Update user role/status (admin only)"},
-      "delete": {"summary": "Delete user (admin only). Refuses to delete the last admin (HTTP 409)."}
+    "/api/downloads/torrent/{hash}": {
+      "delete": {
+        "summary": "Remove a torrent download"
+      }
     },
-    "/api/invites":                {"get": {"summary": "List invites (admin)"}, "post": {"summary": "Create invite (admin)"}},
-    "/api/invites/{id}":           {"delete": {"summary": "Revoke invite (admin)"}},
-
-    "/api/totp/setup":   {"post": {"summary": "Generate TOTP secret + QR code"}},
-    "/api/totp/verify":  {"post": {"summary": "Verify TOTP code and enable 2FA"}},
-    "/api/totp/disable": {"post": {"summary": "Disable TOTP"}},
-    "/api/totp/status":  {"get":  {"summary": "Check if TOTP is enabled"}},
-
-    "/api/notifications":              {"get": {"summary": "List notifications"}},
-    "/api/notifications/{id}":         {"delete": {"summary": "Delete notification"}},
-    "/api/notifications/{id}/read":    {"put": {"summary": "Mark as read"}},
-    "/api/notifications/read-all":     {"put": {"summary": "Mark all as read"}},
-    "/api/notifications/unread":       {"get": {"summary": "Unread count"}},
-
-    "/api/webhooks":      {"get": {"summary": "List webhooks"}, "post": {"summary": "Create webhook"}},
-    "/api/webhooks/{id}": {"delete": {"summary": "Delete webhook"}},
-    "/api/webhooks/test": {"post": {"summary": "Send a test payload"}},
-
-    "/api/stats":    {"get": {"summary": "Library statistics"}},
-    "/api/activity": {"get": {"summary": "Recent activity log"}},
-    "/api/history":  {"get": {"summary": "Reading history"}},
-    "/api/history/{id}":   {"delete": {"summary": "Delete history entry"}},
-    "/api/history/stats":  {"get": {"summary": "Reading-history statistics"}},
-
-    "/api/authors":         {"get": {"summary": "List monitored authors"}},
-    "/api/authors/{id}":    {"delete": {"summary": "Unmonitor an author"}},
-    "/api/series":          {"get": {"summary": "List series with completeness"}},
-    "/api/series/{name}/missing": {"get": {"summary": "Missing volumes in a series"}},
-
-    "/api/settings":           {"get": {"summary": "Get configuration"}, "post": {"summary": "Update configuration (admin)"}},
-    "/api/config":             {"get": {"summary": "Public-safe config subset"}},
-    "/api/scheduler/status":   {"get": {"summary": "Wishlist scheduler status"}},
-    "/api/admin/dashboard":    {"get": {"summary": "Admin dashboard data"}},
-    "/api/admin/health":       {"get": {"summary": "Admin health summary"}},
-    "/api/admin/activity":     {"get": {"summary": "Admin-level activity log"}},
-    "/api/admin/bulk/retry":   {"post": {"summary": "Bulk retry failed downloads"}},
-    "/api/admin/bulk/cancel":  {"post": {"summary": "Bulk cancel active downloads"}},
-    "/api/backup":             {"get": {"summary": "Download a database backup"}},
-    "/api/backup/list":        {"get": {"summary": "List existing backups"}},
-    "/api/restore":            {"post": {"summary": "Restore from a backup file (admin)"}},
-
-    "/api/import/csv":         {"post": {"summary": "Import wishlist from a Goodreads/StoryGraph CSV"}},
-    "/api/import/goodreads":   {"post": {"summary": "Import Goodreads shelves"}},
-    "/api/import/storygraph":  {"post": {"summary": "Import StoryGraph reading list"}},
-    "/api/export/library":     {"get": {"summary": "Export library as JSON/CSV"}},
-    "/api/export/wishlist":    {"get": {"summary": "Export wishlist as JSON/CSV"}},
-    "/api/export/requests":    {"get": {"summary": "Export requests as JSON/CSV"}},
-
+    "/api/downloads/novel/{jobID}": {
+      "delete": {
+        "summary": "Remove a novel download job"
+      }
+    },
+    "/api/downloads/jobs/{id}/retry": {
+      "post": {
+        "summary": "Retry a failed download"
+      }
+    },
+    "/api/downloads/clear": {
+      "post": {
+        "summary": "Clear finished downloads"
+      }
+    },
+    "/api/quality-profiles": {
+      "get": {
+        "summary": "List quality profiles"
+      },
+      "post": {
+        "summary": "Create quality profile"
+      }
+    },
+    "/api/quality-profiles/{id}": {
+      "delete": {
+        "summary": "Delete quality profile"
+      }
+    },
+    "/api/quality-profiles/default": {
+      "get": {
+        "summary": "Default profile"
+      }
+    },
+    "/api/release-profiles": {
+      "get": {
+        "summary": "List release profiles"
+      },
+      "post": {
+        "summary": "Create"
+      }
+    },
+    "/api/release-profiles/{id}": {
+      "delete": {
+        "summary": "Delete release profile"
+      }
+    },
+    "/api/blocklist": {
+      "get": {
+        "summary": "List blocklist entries"
+      },
+      "post": {
+        "summary": "Add an entry"
+      }
+    },
+    "/api/blocklist/{id}": {
+      "delete": {
+        "summary": "Remove an entry"
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "summary": "List tags"
+      },
+      "post": {
+        "summary": "Create a tag"
+      }
+    },
+    "/api/tags/{id}": {
+      "delete": {
+        "summary": "Delete a tag"
+      }
+    },
+    "/api/users": {
+      "get": {
+        "summary": "List users (admin only)"
+      }
+    },
+    "/api/users/{id}": {
+      "patch": {
+        "summary": "Update user role/status (admin only)"
+      },
+      "delete": {
+        "summary": "Delete user (admin only). Refuses to delete the last admin (HTTP 409)."
+      }
+    },
+    "/api/invites": {
+      "get": {
+        "summary": "List invites (admin)"
+      },
+      "post": {
+        "summary": "Create invite (admin)"
+      }
+    },
+    "/api/invites/{id}": {
+      "delete": {
+        "summary": "Revoke invite (admin)"
+      }
+    },
+    "/api/totp/setup": {
+      "post": {
+        "summary": "Generate TOTP secret + QR code"
+      }
+    },
+    "/api/totp/verify": {
+      "post": {
+        "summary": "Verify TOTP code and enable 2FA"
+      }
+    },
+    "/api/totp/disable": {
+      "post": {
+        "summary": "Disable TOTP"
+      }
+    },
+    "/api/totp/status": {
+      "get": {
+        "summary": "Check if TOTP is enabled"
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "summary": "List notifications"
+      }
+    },
+    "/api/notifications/{id}": {
+      "delete": {
+        "summary": "Delete notification"
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "put": {
+        "summary": "Mark as read"
+      }
+    },
+    "/api/notifications/read-all": {
+      "put": {
+        "summary": "Mark all as read"
+      }
+    },
+    "/api/notifications/unread": {
+      "get": {
+        "summary": "Unread count"
+      }
+    },
+    "/api/webhooks": {
+      "get": {
+        "summary": "List webhooks"
+      },
+      "post": {
+        "summary": "Create webhook"
+      }
+    },
+    "/api/webhooks/{id}": {
+      "delete": {
+        "summary": "Delete webhook"
+      }
+    },
+    "/api/webhooks/test": {
+      "post": {
+        "summary": "Send a test payload"
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "Library statistics"
+      }
+    },
+    "/api/activity": {
+      "get": {
+        "summary": "Recent activity log"
+      }
+    },
+    "/api/history": {
+      "get": {
+        "summary": "Reading history"
+      }
+    },
+    "/api/history/{id}": {
+      "delete": {
+        "summary": "Delete history entry"
+      }
+    },
+    "/api/history/stats": {
+      "get": {
+        "summary": "Reading-history statistics"
+      }
+    },
+    "/api/authors": {
+      "get": {
+        "summary": "List monitored authors"
+      }
+    },
+    "/api/authors/{id}": {
+      "delete": {
+        "summary": "Unmonitor an author"
+      }
+    },
+    "/api/series": {
+      "get": {
+        "summary": "List series with completeness"
+      }
+    },
+    "/api/series/{name}/missing": {
+      "get": {
+        "summary": "Missing volumes in a series"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "summary": "Get configuration"
+      },
+      "post": {
+        "summary": "Update configuration (admin)"
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Public-safe config subset"
+      }
+    },
+    "/api/scheduler/status": {
+      "get": {
+        "summary": "Wishlist scheduler status"
+      }
+    },
+    "/api/admin/dashboard": {
+      "get": {
+        "summary": "Admin dashboard data"
+      }
+    },
+    "/api/admin/health": {
+      "get": {
+        "summary": "Admin health summary"
+      }
+    },
+    "/api/admin/activity": {
+      "get": {
+        "summary": "Admin-level activity log"
+      }
+    },
+    "/api/admin/bulk/retry": {
+      "post": {
+        "summary": "Bulk retry failed downloads"
+      }
+    },
+    "/api/admin/bulk/cancel": {
+      "post": {
+        "summary": "Bulk cancel active downloads"
+      }
+    },
+    "/api/backup": {
+      "get": {
+        "summary": "Download a database backup"
+      }
+    },
+    "/api/backup/list": {
+      "get": {
+        "summary": "List existing backups"
+      }
+    },
+    "/api/restore": {
+      "post": {
+        "summary": "Restore from a backup file (admin)"
+      }
+    },
+    "/api/import/csv": {
+      "post": {
+        "summary": "Import wishlist from a Goodreads/StoryGraph CSV"
+      }
+    },
+    "/api/import/goodreads": {
+      "post": {
+        "summary": "Import Goodreads shelves"
+      }
+    },
+    "/api/import/storygraph": {
+      "post": {
+        "summary": "Import StoryGraph reading list"
+      }
+    },
+    "/api/export/library": {
+      "get": {
+        "summary": "Export library as JSON/CSV"
+      }
+    },
+    "/api/export/wishlist": {
+      "get": {
+        "summary": "Export wishlist as JSON/CSV"
+      }
+    },
+    "/api/export/requests": {
+      "get": {
+        "summary": "Export requests as JSON/CSV"
+      }
+    },
     "/torznab/api": {
       "get": {
         "summary": "Torznab indexer API",
         "description": "Lets Prowlarr / Readarr / other *arr apps use Librarr as a Torznab indexer.",
         "parameters": [
-          {"name": "t",      "in": "query", "schema": {"type": "string", "enum": ["caps", "search", "book", "audio"]}},
-          {"name": "q",      "in": "query", "schema": {"type": "string"}},
-          {"name": "title",  "in": "query", "schema": {"type": "string"}},
-          {"name": "author", "in": "query", "schema": {"type": "string"}},
-          {"name": "apikey", "in": "query", "schema": {"type": "string"}, "description": "Required when TORZNAB_API_KEY is set."}
+          {
+            "name": "t",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "caps",
+                "search",
+                "book",
+                "audio"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apikey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required when TORZNAB_API_KEY is set."
+          }
         ],
         "responses": {
-          "200": {"description": "Torznab XML (RSS feed or caps document)", "content": {"application/xml": {}}}
+          "200": {
+            "description": "Torznab XML (RSS feed or caps document)",
+            "content": {
+              "application/xml": {}
+            }
+          }
         }
       }
     },
@@ -518,11 +930,21 @@
         "summary": "OPDS 1.2 catalog root",
         "description": "Browse your library from e-reader apps (KOReader, Moon+ Reader, Librera).",
         "security": [],
-        "responses": {"200": {"description": "Atom feed", "content": {"application/atom+xml": {}}}}
+        "responses": {
+          "200": {
+            "description": "Atom feed",
+            "content": {
+              "application/atom+xml": {}
+            }
+          }
+        }
       }
     },
     "/metrics": {
-      "get": {"summary": "Prometheus metrics", "security": []}
+      "get": {
+        "summary": "Prometheus metrics",
+        "security": []
+      }
     }
   }
 }

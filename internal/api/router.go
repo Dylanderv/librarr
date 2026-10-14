@@ -198,7 +198,6 @@ func (s *Server) registerRoutes() {
 	s.registerSearchRoutes()
 	s.registerDownloadRoutes()
 	s.registerLibraryRoutes()
-	s.registerFilesRoutes()
 	s.registerRequestRoutes()
 	s.registerCurationRoutes()
 	s.registerAdminRoutes()
@@ -313,13 +312,6 @@ func (s *Server) registerLibraryRoutes() {
 	s.mux.HandleFunc("DELETE /api/library/book/{id}", s.handleDeleteBook)
 	s.mux.HandleFunc("DELETE /api/library/audiobook/{id}", s.handleDeleteAudiobook)
 	s.mux.HandleFunc("DELETE /api/library/manga/{id}", s.handleDeleteManga)
-
-	// Kavita metadata editing (writes to the media files, then rescans).
-	s.mux.HandleFunc("GET /api/library/manga/series/{id}/metadata", requireAdmin(s.handleSeriesMetadata))
-	s.mux.HandleFunc("POST /api/library/metadata/bulk", requireAdmin(s.handleBulkMetadata))
-	s.mux.HandleFunc("POST /api/library/metadata/rename-preview", requireAdmin(s.handleRenamePreview))
-	// Online metadata lookup to pre-fill the bulk editor (AniList/Open Library).
-	s.mux.HandleFunc("GET /api/metadata/search", requireAdmin(s.handleMetadataSearch))
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 
@@ -352,25 +344,10 @@ func (s *Server) registerLibraryRoutes() {
 	s.mux.HandleFunc("GET /api/authors", s.handleListMonitoredAuthors)
 	s.mux.HandleFunc("POST /api/authors/monitor", requireAdmin(s.handleAddMonitoredAuthor))
 	s.mux.HandleFunc("DELETE /api/authors/{id}", requireAdmin(s.handleDeleteMonitoredAuthor))
-}
 
-// registerFilesRoutes wires the filesystem-backed library browser.
-//
-// Admin-only, like /api/library/metadata/*: these endpoints expose the server's
-// directory tree, which is strictly more revealing than the metadata editor
-// they will feed, so they cannot be looser.
-func (s *Server) registerFilesRoutes() {
-	s.mux.HandleFunc("GET /api/files/roots", requireAdmin(s.handleFilesRoots))
-	s.mux.HandleFunc("GET /api/files/list", requireAdmin(s.handleFilesList))
-	s.mux.HandleFunc("POST /api/files/rename/preview", requireAdmin(s.handleFilesRenamePreview))
-	s.mux.HandleFunc("POST /api/files/rename/apply", requireAdmin(s.handleFilesRenameApply))
-	s.mux.HandleFunc("POST /api/files/rename/file", requireAdmin(s.handleFilesRenameFile))
-	s.mux.HandleFunc("POST /api/files/merge/preview", requireAdmin(s.handleFilesMergePreview))
-	s.mux.HandleFunc("POST /api/files/merge/apply", requireAdmin(s.handleFilesMergeApply))
-	s.mux.HandleFunc("GET /api/files/metadata", requireAdmin(s.handleFilesMetadata))
-	s.mux.HandleFunc("POST /api/files/metadata/preview", requireAdmin(s.handleFilesMetadataPreview))
-	s.mux.HandleFunc("POST /api/files/metadata/apply", requireAdmin(s.handleFilesMetadataApply))
-	s.mux.HandleFunc("POST /api/files/kavita/scan", requireAdmin(s.handleFilesKavitaScan))
+	// Fork-specific endpoints (metadata editor, file browser) live in
+	// router_fork.go so upstream changes to the blocks above merge cleanly.
+	s.registerForkRoutes()
 }
 
 // registerRequestRoutes wires the book request workflow and notifications.

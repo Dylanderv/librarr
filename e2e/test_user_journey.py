@@ -8,17 +8,11 @@ conftest.py) — no external network. Covers the full scope of a user:
 
 Every test also implicitly asserts a zero-JS-error journey (ui fixture).
 """
+
 import json
 import time
 
 import pytest
-
-from conftest import (
-    BROWSE_FIXTURE_DIR,
-    BROWSE_FIXTURE_FILE,
-    MERGE_FIXTURE_DIRS,
-    MERGE_FIXTURE_SERIES,
-)
 
 
 def active_tab(page):
@@ -30,6 +24,7 @@ def api(page, path):
 
 
 # ── Boot, security posture, assets ─────────────────────────────────────────
+
 
 def test_boot_serves_ui_with_strict_csp(ui):
     page = ui["page"]
@@ -43,8 +38,12 @@ def test_boot_serves_ui_with_strict_csp(ui):
         assert attr not in html, f"inline handler {attr} leaked back into index.html"
     assert "<script>" not in html, "inline script block leaked back into index.html"
 
-    for asset in ("/static/js/app.js", "/static/css/app.css",
-                  "/static/js/vendor/tailwind.js", "/static/fonts/inter-latin.woff2"):
+    for asset in (
+        "/static/js/app.js",
+        "/static/css/app.css",
+        "/static/js/vendor/tailwind.js",
+        "/static/fonts/inter-latin.woff2",
+    ):
         r = page.request.get(ui["base"] + asset)
         assert r.status == 200, f"{asset} -> {r.status}"
 
@@ -52,13 +51,15 @@ def test_boot_serves_ui_with_strict_csp(ui):
 def test_tailwind_and_font_render_offline(ui):
     page = ui["page"]
     bg = page.evaluate(
-        "() => getComputedStyle(document.querySelector('[class*=bg-slate]')).backgroundColor")
+        "() => getComputedStyle(document.querySelector('[class*=bg-slate]')).backgroundColor"
+    )
     assert bg not in ("", "rgba(0, 0, 0, 0)"), "Tailwind runtime produced no styles"
     font = page.evaluate("() => getComputedStyle(document.body).fontFamily")
     assert "Inter" in font
 
 
 # ── Navigation via event delegation ─────────────────────────────────────────
+
 
 def test_all_tabs_switch(ui):
     page = ui["page"]
@@ -69,6 +70,7 @@ def test_all_tabs_switch(ui):
 
 
 # ── Search / sort / the data-key contract ───────────────────────────────────
+
 
 @pytest.fixture()
 def searched(ui):
@@ -114,7 +116,9 @@ def test_download_key_maps_to_rendered_result_in_every_sort_mode(searched):
     page.click('[data-action="setViewLayout"][data-arg="grid"]')
     page.wait_for_timeout(200)
     for mode in ("size", "seeders", "relevance"):
-        page.click(f'#search-sort-buttons [data-action="setSortMode"][data-arg="{mode}"]')
+        page.click(
+            f'#search-sort-buttons [data-action="setSortMode"][data-arg="{mode}"]'
+        )
         page.wait_for_timeout(300)
         assert page.evaluate(_MAPPING_PROBE) == [], f"grid sort={mode}"
 
@@ -123,7 +127,9 @@ def test_download_key_maps_to_rendered_result_in_every_sort_mode(searched):
     page.click('[data-action="setViewLayout"][data-arg="list"]')
     page.wait_for_timeout(200)
     for col in ("title", "size", "seeders"):
-        page.locator(f'#search-results th[data-action="setSortMode"][data-arg="{col}"]').first.click()
+        page.locator(
+            f'#search-results th[data-action="setSortMode"][data-arg="{col}"]'
+        ).first.click()
         page.wait_for_timeout(300)
         assert page.evaluate(_MAPPING_PROBE) == [], f"list sort={col}"
 
@@ -181,8 +187,9 @@ def test_download_completes_and_lands_in_library(searched):
             last = ours[0]
             if last.get("status") == "completed":
                 break
-            assert last.get("status") not in ("error", "dead_letter"), \
+            assert last.get("status") not in ("error", "dead_letter"), (
                 f"download failed: {json.dumps(last)}"
+            )
         time.sleep(2)  # gentle poll — 1/s trips the API rate limiter
     assert last and last.get("status") == "completed", f"job never completed: {last}"
 
@@ -199,6 +206,7 @@ def test_download_completes_and_lands_in_library(searched):
 
 # ── Wishlist CRUD through delegated row buttons ─────────────────────────────
 
+
 def test_wishlist_add_search_delete(ui):
     page = ui["page"]
     page.click('[data-action="switchTab"][data-arg="wishlist"]')
@@ -206,7 +214,8 @@ def test_wishlist_add_search_delete(ui):
     page.wait_for_timeout(200)
     first_input = page.evaluate(
         "() => [...document.querySelectorAll('#wishlist-form input')]"
-        ".find(i => i.type !== 'checkbox')?.id")
+        ".find(i => i.type !== 'checkbox')?.id"
+    )
     assert first_input, "wishlist form has no text input"
     page.fill(f"#{first_input}", "The Hobbit")
     page.click('[data-action="addWishlistItem"]')
@@ -225,146 +234,8 @@ def test_wishlist_add_search_delete(ui):
     assert page.locator('[data-action="deleteWishlistItem"]').count() == 0
 
 
-# ── Browse tab: filesystem-backed listing ───────────────────────────────────
-
-def test_browse_lists_roots_and_navigates_into_a_folder(ui):
-    """Smoke test of the Browse tab: the configured libraries show up, and
-    walking into a folder lists the files it really holds on disk."""
-    page = ui["page"]
-    page.click('[data-action="switchTab"][data-arg="browse"]')
-    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
-    roots = page.locator('#browse-roots button[data-action="browseRoot"]').count()
-    assert roots >= 1, "no library root rendered in Browse"
-    assert page.locator("#browse-no-roots").is_hidden()
-    assert page.locator("#browse-error").is_hidden()
-
-    # The seeded folder is listed, and opening it shows the file inside.
-    folder = page.locator('#browse-list [data-action="browseOpen"]',
-                          has_text=BROWSE_FIXTURE_DIR)
-    folder.first.click()
-    page.wait_for_timeout(500)
-    assert BROWSE_FIXTURE_FILE in page.inner_text("#browse-list")
-    assert BROWSE_FIXTURE_DIR in page.inner_text("#browse-breadcrumb")
-    assert page.locator("#browse-error").is_hidden()
-
-
-def test_browse_merge_preview_lists_destinations(ui):
-    """Smoke test of the folder merge: ticking two volume folders unlocks the
-    action bar, and the panel previews one destination per file. Preview only —
-    nothing is applied, so the fixture survives for the other tests."""
-    page = ui["page"]
-    page.click('[data-action="switchTab"][data-arg="browse"]')
-    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
-
-    # One tick is not a merge: the bar shows, the button stays inert.
-    for name in MERGE_FIXTURE_DIRS:
-        page.locator(f'#browse-list input[data-action-change="browseSelect"]'
-                     f'[data-path$="{name}"]').check()
-        page.wait_for_timeout(100)
-        if name == MERGE_FIXTURE_DIRS[0]:
-            assert page.locator("#browse-merge-btn").is_disabled()
-
-    assert page.locator("#browse-select-bar").is_visible()
-    page.click("#browse-merge-btn")
-    page.wait_for_selector("#browse-merge-rows tr")
-
-    # The target name is derived from the folder names' common tokens, with the
-    # volume marker dropped.
-    assert page.input_value("#browse-merge-series") == MERGE_FIXTURE_SERIES
-    rows = page.inner_text("#browse-merge-rows")
-    assert f"{MERGE_FIXTURE_SERIES} Vol.01.cbz" in rows
-    assert f"{MERGE_FIXTURE_SERIES} Vol.02.cbz" in rows
-    assert page.locator("#browse-merge-apply").is_enabled()
-    assert page.locator("#browse-merge-error").is_hidden()
-
-    # Leaving the folder must drop both the selection and the panel.
-    page.click('[data-action="closeBrowseMerge"]')
-    page.click('[data-action="clearBrowseSelection"]')
-    assert page.locator("#browse-select-bar").is_hidden()
-
-
-def _open_browse_meta_panel(page):
-    """Navigate to the seeded folder and open its metadata panel."""
-    page.click('[data-action="switchTab"][data-arg="browse"]')
-    page.wait_for_selector('#browse-roots button[data-action="browseRoot"]')
-    page.locator('#browse-list [data-action="browseOpen"]',
-                 has_text=BROWSE_FIXTURE_DIR).first.click()
-    page.wait_for_timeout(500)
-    page.click("#browse-meta-btn")
-    page.wait_for_selector("#browse-online")
-
-
-def test_browse_online_lookup_prefills_and_arms_fields(ui):
-    """Online lookup in the Browse folder panel. The upstream call is stubbed at
-    the browser, so the test never reaches AniList or Open Library."""
-    page = ui["page"]
-    _open_browse_meta_panel(page)
-
-    # The library we are in routes the source (the e2e root is EBOOK_DIR), and
-    # the query starts from the folder name.
-    assert page.input_value("#browse-online-source") == "book"
-    assert page.input_value("#browse-online-query") == BROWSE_FIXTURE_DIR
-
-    page.route(
-        "**/api/metadata/search*",
-        lambda route: route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps({"candidates": [{
-                "source": "openlibrary",
-                "title": "Stubbed Series",
-                "summary": "A stubbed summary.",
-                "authors": ["Stub Author"],
-                "genres": ["Stub Genre"],
-                "year": "1999",
-                "language": "en",
-            }]}),
-        ),
-    )
-    page.click("#browse-online-btn")
-    page.wait_for_selector(".browse-online-candidate")
-    results = page.inner_text("#browse-online-results")
-    assert "Stubbed Series" in results
-    # Year is shown to help identify the result, never written.
-    assert "1999" in results
-
-    page.click(".browse-online-candidate")
-    page.wait_for_timeout(200)
-    assert page.input_value("#browse-meta-series") == "Stubbed Series"
-    assert page.is_checked("#browse-meta-en-series")
-    assert page.input_value("#browse-meta-authors") == "Stub Author"
-    assert page.is_checked("#browse-meta-en-authors")
-    assert page.input_value("#browse-meta-genres") == "Stub Genre"
-    # A field the source did not return stays empty and unarmed.
-    assert page.input_value("#browse-meta-publisher") == ""
-    assert not page.is_checked("#browse-meta-en-publisher")
-    # Nothing is written without a preview: Apply is still locked.
-    assert page.locator("#browse-meta-apply").is_disabled()
-    page.unroute("**/api/metadata/search*")
-
-
-def test_browse_online_lookup_reports_an_unconfigured_source(ui):
-    """A 503 means the source is not configured — its own message, not a
-    generic failure."""
-    page = ui["page"]
-    _open_browse_meta_panel(page)
-    page.route(
-        "**/api/metadata/search*",
-        lambda route: route.fulfill(
-            status=503,
-            content_type="application/json",
-            body=json.dumps({"error": "Open Library client not available"}),
-        ),
-    )
-    page.click("#browse-online-btn")
-    page.wait_for_timeout(500)
-    status = page.inner_text("#browse-online-status")
-    assert "not configured" in status
-    assert page.locator(".browse-online-candidate").count() == 0
-    page.unroute("**/api/metadata/search*")
-
-
 # ── Cover fallback via capture-phase error delegation ───────────────────────
+
 
 def test_broken_cover_falls_back_to_placeholder(ui):
     page = ui["page"]
@@ -380,6 +251,7 @@ def test_broken_cover_falls_back_to_placeholder(ui):
 
 
 # ── i18n toggle (re-renders DOM incl. converted anchor templates) ───────────
+
 
 def test_language_toggle_rerenders(ui):
     page = ui["page"]

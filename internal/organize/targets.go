@@ -2,18 +2,15 @@ package organize
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
-	"github.com/JeremiahM37/librarr/internal/kavita"
 )
 
 // LibraryTargets handles importing organized files into external libraries.
@@ -62,7 +59,7 @@ func (lt *LibraryTargets) copyToCalibre(filePath, title, author string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.CalibreLibraryPath, sanitizePath(author, 80), sanitizePath(title, 80))
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	if err := mkdirForImport(destDir); err != nil {
 		slog.Error("create calibre dir failed", "error", err)
 		return
 	}
@@ -85,7 +82,7 @@ func (lt *LibraryTargets) copyToKavitaEbook(filePath, title, author string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.KavitaLibraryPath, sanitizePath(author, 80), sanitizePath(title, 80))
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	if err := mkdirForImport(destDir); err != nil {
 		slog.Error("create kavita ebook dir failed", "error", err)
 		return
 	}
@@ -105,7 +102,7 @@ func (lt *LibraryTargets) copyToKavitaManga(filePath, seriesTitle string) {
 	}
 
 	destDir := filepath.Join(lt.cfg.KavitaMangaLibraryPath, sanitizePath(seriesTitle, 80))
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	if err := mkdirForImport(destDir); err != nil {
 		slog.Error("create kavita manga dir failed", "error", err)
 		return
 	}
@@ -158,29 +155,6 @@ func (lt *LibraryTargets) absLibraryScan(libraryID string) {
 	}
 }
 
-// scanKavita triggers a Kavita library scan after an import.
-//
-// SCOPE: every library is scanned, not just the one the imported file landed
-// in. Narrowing it would mean matching the destination path against each
-// library's folders, and at this point in the pipeline the caller no longer
-// carries that path — copyToKavita and friends are fire-and-forget. Scanning
-// one library too many costs Kavita some I/O; scanning the wrong one, or none,
-// costs the user a book that never shows up. If this becomes expensive, the
-// fix is to thread the destination path down to here and reuse the same
-// folder-matching rule as the Browse scan button (internal/api/files_kavita.go).
-func (lt *LibraryTargets) scanKavita() {
-	if !lt.cfg.HasKavita() {
-		return
-	}
-
-	client := kavita.New(lt.cfg.KavitaURL, lt.cfg.KavitaUser, lt.cfg.KavitaPass)
-	if err := client.ScanAllLibraries(context.Background(), false); err != nil {
-		slog.Error("kavita scan failed", "error", err)
-		return
-	}
-	slog.Info("kavita library scan triggered")
-}
-
 // copyToKomga copies a manga file to the Komga library path.
 func (lt *LibraryTargets) copyToKomga(filePath, seriesTitle string) {
 	if !lt.cfg.HasKomga() || lt.cfg.KomgaLibraryPath == "" {
@@ -189,7 +163,7 @@ func (lt *LibraryTargets) copyToKomga(filePath, seriesTitle string) {
 
 	safeTitle := sanitizePath(seriesTitle, 80)
 	destDir := filepath.Join(lt.cfg.KomgaLibraryPath, safeTitle)
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	if err := mkdirForImport(destDir); err != nil {
 		slog.Error("create komga dir failed", "error", err)
 		return
 	}

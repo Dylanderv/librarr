@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -71,13 +72,15 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 		"kavita_url":           s.cfg.KavitaURL,
 		"kavita_user":          s.cfg.KavitaUser,
 		"kavita_pass":          s.cfg.KavitaPass,
-		"kavita_path_map":      s.cfg.KavitaPathMap,
 		"komga_url":            s.cfg.KomgaURL,
 		"komga_user":           s.cfg.KomgaUser,
 		"komga_pass":           s.cfg.KomgaPass,
 		"calibre_url":          s.cfg.CalibreURL,
 		"calibre_library_path": s.cfg.CalibreLibraryPath,
 	}
+
+	// Fork-specific defaults live in settings_fork.go.
+	maps.Copy(defaults, s.forkSettingsMap())
 
 	// Merge defaults under settings (settings override).
 	for k, v := range defaults {

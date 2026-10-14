@@ -46,8 +46,11 @@ func (o *Organizer) OrganizeEbook(filePath, title, author string) (string, error
 	safeAuthor := sanitizePath(author, 80)
 	safeTitle := sanitizePath(title, 80)
 
-	destDir := filepath.Join(o.cfg.EbookDir, safeAuthor, safeTitle)
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	destDir, err := joinLibraryDir(o.cfg.EbookDir, filepath.Join(safeAuthor, safeTitle))
+	if err != nil {
+		return filePath, err
+	}
+	if err := mkdirForImport(destDir); err != nil {
 		return filePath, err
 	}
 
@@ -60,8 +63,11 @@ func (o *Organizer) OrganizeEbook(filePath, title, author string) (string, error
 
 	// Also copy to Kavita ebook library if configured.
 	if o.cfg.KavitaLibraryPath != "" {
-		kavitaDir := filepath.Join(o.cfg.KavitaLibraryPath, safeAuthor, safeTitle)
-		if err := os.MkdirAll(kavitaDir, 0o777); err == nil {
+		kavitaDir, err := joinLibraryDir(o.cfg.KavitaLibraryPath, filepath.Join(safeAuthor, safeTitle))
+		if err == nil {
+			err = mkdirForImport(kavitaDir)
+		}
+		if err == nil {
 			kavitaDest := filepath.Join(kavitaDir, filepath.Base(destPath))
 			if err := copyFile(destPath, kavitaDest); err != nil {
 				slog.Warn("copy to kavita ebook library failed", "error", err)
@@ -96,7 +102,10 @@ func (o *Organizer) OrganizeAudiobook(filePath, title, author string) (string, e
 	safeAuthor := sanitizePath(author, 80)
 	safeTitle := sanitizePath(title, 80)
 
-	destDir := filepath.Join(o.cfg.AudiobookDir, safeAuthor, safeTitle)
+	destDir, err := joinLibraryDir(o.cfg.AudiobookDir, filepath.Join(safeAuthor, safeTitle))
+	if err != nil {
+		return filePath, err
+	}
 	if info.IsDir() {
 		if err := moveDirTree(filePath, destDir); err != nil {
 			return filePath, err
@@ -104,7 +113,7 @@ func (o *Organizer) OrganizeAudiobook(filePath, title, author string) (string, e
 		return destDir, nil
 	}
 
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	if err := mkdirForImport(destDir); err != nil {
 		return filePath, err
 	}
 
@@ -124,8 +133,11 @@ func (o *Organizer) OrganizeManga(filePath, seriesTitle string) (string, error) 
 	}
 
 	safeTitle := cleanSeriesTitle(seriesTitle)
-	destDir := filepath.Join(o.cfg.MangaDir, safeTitle)
-	if err := os.MkdirAll(destDir, 0o777); err != nil {
+	destDir, err := joinLibraryDir(o.cfg.MangaDir, safeTitle)
+	if err != nil {
+		return filePath, err
+	}
+	if err := mkdirForImport(destDir); err != nil {
 		return filePath, err
 	}
 
@@ -157,8 +169,11 @@ func (o *Organizer) OrganizeManga(filePath, seriesTitle string) (string, error) 
 
 	// Also copy to Kavita manga library if configured.
 	if o.cfg.KavitaMangaLibraryPath != "" {
-		kavitaDir := filepath.Join(o.cfg.KavitaMangaLibraryPath, safeTitle)
-		if err := os.MkdirAll(kavitaDir, 0o777); err == nil {
+		kavitaDir, err := joinLibraryDir(o.cfg.KavitaMangaLibraryPath, safeTitle)
+		if err == nil {
+			err = mkdirForImport(kavitaDir)
+		}
+		if err == nil {
 			resultInfo, err := os.Stat(resultPath)
 			if err == nil {
 				if resultInfo.IsDir() {
@@ -235,7 +250,7 @@ func moveFile(src, dst string) error {
 }
 
 func moveDirTree(srcDir, dstDir string) error {
-	if err := os.MkdirAll(dstDir, 0o777); err != nil {
+	if err := mkdirForImport(dstDir); err != nil {
 		return err
 	}
 
@@ -257,10 +272,10 @@ func moveDirTree(srcDir, dstDir string) error {
 
 		dstPath := filepath.Join(dstDir, rel)
 		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o777)
+			return mkdirForImport(dstPath)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0o777); err != nil {
+		if err := mkdirForImport(filepath.Dir(dstPath)); err != nil {
 			return err
 		}
 		return moveFile(path, dstPath)
