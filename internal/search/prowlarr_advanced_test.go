@@ -75,31 +75,84 @@ func TestProwlarr_SearchWithOptions_EmptyFallsBackToVariants(t *testing.T) {
 	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "test-key"}
 	p := NewProwlarr(cfg, server.Client(), "manga")
 
-	// UseOverride=false must behave exactly like Search (3 variants on manga tab).
+	// UseOverride=false must behave exactly like Search (plain tab query now).
 	if _, err := p.SearchWithOptions(context.Background(), "berserk", ProwlarrOptions{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(hits) != 3 {
-		t.Fatalf("expected 3 variant requests, got %d", len(hits))
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 default request, got %d", len(hits))
+	}
+	if got := hits[0]["query"][0]; got != "berserk" {
+		t.Errorf("expected plain display query, got %q", got)
 	}
 }
 
-func TestProwlarr_MangaVariants_IncludeComicSuffix(t *testing.T) {
+func TestProwlarr_SearchWithOptions_PcatOnlyKeepsDisplayQuery(t *testing.T) {
+	var hits []map[string][]string
+	server := recordProwlarrRequests(t, &hits, nil)
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "test-key"}
+	p := NewProwlarr(cfg, server.Client(), "manga")
+
+	// pq empty + pcat set: same query text, but overridden categories.
+	results, err := p.SearchWithOptions(context.Background(), "berserk", ProwlarrOptions{
+		Categories:    []string{"7020"},
+		CategoriesSet: true,
+		UseOverride:   true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected exactly 1 Prowlarr request, got %d", len(hits))
+	}
+	if got := hits[0]["query"][0]; got != "berserk" {
+		t.Errorf("expected display query kept, got %q", got)
+	}
+	if cats := strings.Join(hits[0]["categories"], ","); cats != "7020" {
+		t.Errorf("expected categories [7020], got %v", hits[0]["categories"])
+	}
+}
+
+func TestProwlarr_SearchWithOptions_EmptyCatsMeansNoFilter(t *testing.T) {
+	var hits []map[string][]string
+	server := recordProwlarrRequests(t, &hits, nil)
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "test-key"}
+	p := NewProwlarr(cfg, server.Client(), "manga")
+
+	// pcat present-but-empty must NOT fall back to tab defaults: the user
+	// explicitly cleared the category filter.
+	if _, err := p.SearchWithOptions(context.Background(), "berserk", ProwlarrOptions{
+		Categories:    []string{},
+		CategoriesSet: true,
+		UseOverride:   true,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected exactly 1 Prowlarr request, got %d", len(hits))
+	}
+	if len(hits[0]["categories"]) != 0 {
+		t.Errorf("expected zero category params (no filter), got %v", hits[0]["categories"])
+	}
+}
+
+func TestProwlarr_MangaVariants_PlainQueryOnly(t *testing.T) {
 	cfg := &config.Config{}
 	p := NewProwlarr(cfg, http.DefaultClient, "manga")
 
-	var queries []string
-	for _, v := range p.searchVariants("berserk", []string{"7020", "7030"}) {
-		queries = append(queries, v.query)
+	variants := p.searchVariants("berserk", []string{"7020", "7030"})
+	if len(variants) != 1 {
+		t.Fatalf("expected a single plain variant (no manga/comic suffix), got %v", variants)
 	}
-	found := false
-	for _, q := range queries {
-		if q == "berserk comic" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected a \"berserk comic\" variant for comics support, got %v", queries)
+	if variants[0].query != "berserk" {
+		t.Errorf("expected plain display query, got %q", variants[0].query)
 	}
 }
 

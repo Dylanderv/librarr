@@ -16,6 +16,9 @@ type ProwlarrOptions struct {
 	// Categories replaces the tab-default Newznab category IDs. Empty keeps
 	// the tab defaults.
 	Categories []string
+	// CategoriesSet distinguishes "pcat absent" (tab defaults apply) from
+	// "pcat present but empty" (no category filter at all).
+	CategoriesSet bool
 	// UseOverride enables Query/Categories. False behaves like Search.
 	UseOverride bool
 }
@@ -26,15 +29,21 @@ type ProwlarrOptions struct {
 // Kept in its own file (rather than inside prowlarr.go) so upstream changes
 // to the default variants merge without touching fork lines.
 func (p *Prowlarr) SearchWithOptions(ctx context.Context, displayQuery string, opts ProwlarrOptions) ([]models.SearchResult, error) {
-	if !opts.UseOverride || opts.Query == "" {
+	if !opts.UseOverride {
 		return p.Search(ctx, displayQuery)
 	}
+	// Empty override query keeps the display text; only the categories (or
+	// their explicit removal) change.
+	query := opts.Query
+	if query == "" {
+		query = displayQuery
+	}
 	categories := opts.Categories
-	if len(categories) == 0 {
+	if !opts.CategoriesSet {
 		categories = p.categoriesForTab()
 	}
 	results, err := p.doSearch(ctx, prowlarrSearchParams{
-		query:      opts.Query,
+		query:      query,
 		categories: categories,
 		limit:      50,
 	})

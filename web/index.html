@@ -217,11 +217,16 @@
           <input type="text" id="prowlarr-adv-query" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" data-i18n-placeholder="adv_query_ph">
         </div>
         <div>
-          <label class="block text-xs text-slate-400 mb-1" data-i18n="adv_cats_label">Prowlarr categories (IDs, comma-separated)</label>
-          <input type="text" id="prowlarr-adv-cats" list="prowlarr-adv-cats-list" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-          <datalist id="prowlarr-adv-cats-list"></datalist>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs text-slate-400" data-i18n="adv_cats_label">Prowlarr categories (untick all = no filter)</label>
+            <button data-action="resetProwlarrAdvCats" class="text-xs text-indigo-400 hover:text-indigo-300" data-i18n="adv_reset">Reset</button>
+          </div>
+          <div id="prowlarr-adv-cats-box" class="max-h-44 overflow-y-auto bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 space-y-1 text-sm text-slate-300"></div>
         </div>
-        <p class="text-xs text-slate-500" data-i18n="adv_hint">Overrides apply to Prowlarr only; other sources keep using your search text.</p>
+        <div class="flex items-center gap-2">
+          <button data-action="applyProwlarrAdv" class="text-xs px-4 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-500" data-i18n="adv_apply">Search</button>
+          <p class="text-xs text-slate-500" data-i18n="adv_hint">Overrides apply to Prowlarr only; other sources keep using your search text.</p>
+        </div>
       </div>
 
       <!-- Search skeleton (per-lane placeholder rows) -->

@@ -269,7 +269,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Present-but-empty clears the filter; absent keeps tab defaults."
           }
         ],
         "responses": {
@@ -339,7 +339,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Present-but-empty clears the filter; absent keeps tab defaults."
           }
         ]
       }
@@ -372,7 +372,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Empty = tab defaults."
+            "description": "Prowlarr advanced-search category override: comma-separated Newznab category IDs (digits only). Present-but-empty clears the filter; absent keeps tab defaults."
           }
         ]
       }
