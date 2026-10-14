@@ -12,6 +12,7 @@ package filewriter
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -183,6 +184,25 @@ func rewriteZip(path string, replace map[string][]byte, add map[string][]byte) e
 	}
 	success = true
 	return nil
+}
+
+// explainNonZip turns a failed zip.OpenReader into an actionable message by
+// sniffing the file's leading magic bytes. Many ".cbz" files in the wild are
+// actually RAR (a .cbr renamed) or 7z archives, which we can't rewrite.
+func explainNonZip(path string, err error) error {
+	magic := make([]byte, 8)
+	if f, e := os.Open(path); e == nil {
+		io.ReadFull(f, magic)
+		f.Close()
+	}
+	switch {
+	case bytes.HasPrefix(magic, []byte("Rar!")):
+		return fmt.Errorf("this .cbz is actually a RAR/CBR archive; metadata can only be written to real ZIP-based CBZ files — re-zip it to a true CBZ first")
+	case bytes.HasPrefix(magic, []byte{'7', 'z', 0xBC, 0xAF, 0x27, 0x1C}):
+		return fmt.Errorf("this .cbz is actually a 7z archive; metadata can only be written to real ZIP-based CBZ files")
+	default:
+		return fmt.Errorf("not a valid ZIP/CBZ archive: %w", err)
+	}
 }
 
 // readZipEntry returns the bytes of a single named entry, or (nil, nil) if the

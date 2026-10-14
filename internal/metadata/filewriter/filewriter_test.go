@@ -222,6 +222,17 @@ func TestApplyUnsupported(t *testing.T) {
 	}
 }
 
+func TestApplyCBZThatIsActuallyRAR(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "book.cbz")
+	// RAR magic ("Rar!\x1a\x07\x00") behind a .cbz extension.
+	os.WriteFile(path, append([]byte("Rar!\x1a\x07\x00"), make([]byte, 32)...), 0644)
+	err := Apply(path, Fields{Title: ptr("x")})
+	if err == nil || !strings.Contains(err.Error(), "RAR/CBR") {
+		t.Errorf("expected a RAR/CBR explanation, got %v", err)
+	}
+}
+
 func TestApplyEmptyNoop(t *testing.T) {
 	if err := Apply("/nonexistent/path.epub", Fields{}); err != nil {
 		t.Errorf("empty fields should be a no-op, got %v", err)
