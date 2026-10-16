@@ -45,3 +45,54 @@ def test_cancel_exception_exists():
     from app.telegram_service import CancelledDownload
 
     assert issubclass(CancelledDownload, Exception)
+
+
+class _FakeFile:
+    def __init__(self, name, size):
+        self.name = name
+        self.size = size
+
+
+class _FakeMsg:
+    def __init__(self, file):
+        self.file = file
+
+
+class _FakeClient:
+    def __init__(self, msg=None, exc=None):
+        self._msg = msg
+        self._exc = exc
+
+    async def get_messages(self, dialog_id, ids):
+        if self._exc:
+            raise self._exc
+        return self._msg
+
+
+def _patch_client(monkeypatch, client):
+    from app import telegram_service as tg
+
+    async def fake_get_client():
+        return client
+
+    monkeypatch.setattr(tg, "get_client", fake_get_client)
+
+
+@pytest.mark.asyncio
+async def test_peek_returns_filename_and_size(monkeypatch):
+    from app import telegram_service as tg
+
+    _patch_client(monkeypatch, _FakeClient(_FakeMsg(_FakeFile("book.cbz", 12345))))
+    assert await tg.peek_attachment(1, 2) == {"filename": "book.cbz", "size_bytes": 12345}
+
+
+@pytest.mark.asyncio
+async def test_peek_no_file_or_unreachable_returns_nones(monkeypatch):
+    from app import telegram_service as tg
+
+    _patch_client(monkeypatch, _FakeClient(_FakeMsg(None)))
+    assert await tg.peek_attachment(1, 2) == {"filename": None, "size_bytes": None}
+    _patch_client(monkeypatch, _FakeClient(None))
+    assert await tg.peek_attachment(1, 2) == {"filename": None, "size_bytes": None}
+    _patch_client(monkeypatch, _FakeClient(exc=RuntimeError("offline")))
+    assert await tg.peek_attachment(1, 2) == {"filename": None, "size_bytes": None}
