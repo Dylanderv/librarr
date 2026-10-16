@@ -19,6 +19,7 @@ const BROWSE_FILE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor"
 const BROWSE_PENCIL_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>';
 const BROWSE_TAG_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>';
 const BROWSE_UP_ICON ='<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/></svg>';
+const BROWSE_MOVE_ICON = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v6m0 0l-3-3m3 3l3-3"/></svg>';
 
 // Kinds this build knows how to label; anything else falls back to "other".
 const BROWSE_KINDS = new Set(['cbz', 'epub', 'pdf', 'cbr', 'audio', 'other']);
@@ -91,6 +92,7 @@ async function openBrowsePath(path) {
   state.browseRootId = data.root;
   state.browsePath = data.path;
   state.browseIsRoot = !!data.is_root;
+  state.browseParent = data.parent || null;
   // Leaving the folder invalidates the plan that was previewed on it.
   if (state.renamePath && state.renamePath !== data.path) closeBrowseRename();
   if (state.metaPath && state.metaPath !== data.path) closeBrowseMeta();
@@ -232,6 +234,7 @@ function browseRow(entry, targetPath, isParent) {
   if (!entry.is_dir) {
     meta.appendChild(browseFileMetaButton(targetPath));
     meta.appendChild(browseRenameFileButton());
+    meta.appendChild(browseMoveFileButton());
     meta.appendChild(browseKindBadge(entry));
     const size = document.createElement('span');
     size.className = 'hidden sm:inline tabular-nums';
@@ -280,6 +283,18 @@ function browseRenameFileButton() {
   btn.title = t('browse_rename_file');
   btn.setAttribute('aria-label', t('browse_rename_file'));
   btn.innerHTML = BROWSE_PENCIL_ICON;
+  return btn;
+}
+
+// Per-file move trigger: relocates the file into another folder, keeping its
+// name. Folders are excluded — they relocate through merge.
+function browseMoveFileButton() {
+  const btn = document.createElement('button');
+  btn.className = 'text-slate-500 hover:text-indigo-300 transition-colors';
+  btn.dataset.action = 'startBrowseFileMove';
+  btn.title = t('browse_move_file');
+  btn.setAttribute('aria-label', t('browse_move_file'));
+  btn.innerHTML = BROWSE_MOVE_ICON;
   return btn;
 }
 
@@ -607,6 +622,82 @@ async function commitBrowseFileRename(path, newName) {
     return;
   }
   showToast(t('browse_rename_file_done'), 'success');
+  await openBrowsePath(state.browsePath);
+}
+
+// --- Single file move ---------------------------------------------------
+// An inline destination picker inside the listing row: the parent folder (when
+// there is one) plus every subfolder of the current one, which are exactly the
+// tick-boxes the merge selection already renders. No new folder option here —
+// creating one is the New folder button's job, one step above.
+function browseMoveDestinations() {
+  const dests = [];
+  if (state.browseParent) dests.push({ path: state.browseParent, label: t('browse_parent') });
+  document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]')
+    .forEach(cb => dests.push({ path: cb.dataset.path, label: browseBaseName(cb.dataset.path) }));
+  return dests;
+}
+
+function startBrowseFileMove(el) {
+  const row = el.closest('[data-file-path]');
+  if (!row || row.querySelector('.browse-move-inline, .browse-rename-inline')) return;
+  const dests = browseMoveDestinations();
+  if (!dests.length) {
+    showToast(t('browse_move_no_dest'), 'error');
+    return;
+  }
+
+  const editor = document.createElement('div');
+  editor.className = 'browse-move-inline flex items-center gap-2 flex-1 min-w-0';
+
+  const select = document.createElement('select');
+  select.className = 'flex-1 min-w-0 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500';
+  dests.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.path;
+    opt.textContent = d.label;
+    select.appendChild(opt);
+  });
+
+  const save = document.createElement('button');
+  save.className = 'px-2 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded';
+  save.textContent = t('browse_move_file_save');
+  save.dataset.action = 'commitBrowseFileMove';
+  save.dataset.path = row.dataset.filePath;
+
+  const cancel = document.createElement('button');
+  cancel.className = 'px-2 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded';
+  cancel.textContent = t('browse_move_file_cancel');
+  cancel.dataset.action = 'cancelBrowseFileMove';
+
+  editor.appendChild(select);
+  editor.appendChild(save);
+  editor.appendChild(cancel);
+
+  // Replace the name cell for the duration of the pick.
+  const nameEl = row.querySelector('.browse-row-name');
+  if (nameEl) nameEl.classList.add('hidden');
+  row.insertBefore(editor, nameEl ? nameEl.nextSibling : null);
+  select.focus();
+}
+
+async function commitBrowseFileMove(path, dest, btn) {
+  const label = btn ? btn.textContent : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t('browse_move_file_saving');
+  }
+  try {
+    await postFiles('/api/files/move', { path, dest });
+  } catch (err) {
+    if (btn) {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+    showToast(err.message || t('browse_move_file_failed'), 'error');
+    return;
+  }
+  showToast(t('browse_move_file_done', { name: browseBaseName(dest) }), 'success');
   await openBrowsePath(state.browsePath);
 }
 
