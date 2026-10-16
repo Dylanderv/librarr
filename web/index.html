@@ -329,6 +329,7 @@
         <span id="browse-select-count" class="text-sm text-slate-300"></span>
         <div class="flex items-center gap-2">
           <button data-action="clearBrowseSelection" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors" data-i18n="browse_select_clear">Clear</button>
+          <button id="browse-move-btn" data-action="openBrowseMove" class="hidden px-3 py-1.5 text-sm font-medium bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors" data-i18n="browse_move">Move</button>
           <button id="browse-merge-btn" data-action="openBrowseMerge" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_merge">Merge</button>
         </div>
       </div>
@@ -392,6 +393,42 @@
         <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
           <span id="browse-merge-summary" class="text-xs text-slate-400"></span>
           <button id="browse-merge-apply" data-action="applyBrowseMerge" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_merge_apply">Merge</button>
+        </div>
+      </div>
+
+      <!-- Move panel: ticked files into one folder. Collisions preview from the
+           destination listing, the server re-checks on apply and reports per file. -->
+      <div id="browse-move-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white" data-i18n="browse_move_title">Move files</h3>
+          <button data-action="closeBrowseMove" class="text-slate-400 hover:text-white text-sm" data-i18n="browse_rename_close">Close</button>
+        </div>
+
+        <div class="px-4 py-3 border-b border-slate-800">
+          <label class="block">
+            <span class="block text-xs text-slate-400 mb-1" data-i18n="browse_move_dest">Destination folder</span>
+            <select id="browse-move-dest" data-action-change="browseMoveDest" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"></select>
+          </label>
+        </div>
+
+        <div id="browse-move-target" class="px-4 py-2.5 text-sm text-slate-300 border-b border-slate-800"></div>
+        <div id="browse-move-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-b border-red-600/30"></div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr class="border-b border-slate-800">
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_move_col_source">File</th>
+                <th class="text-left font-medium px-4 py-2" data-i18n="browse_move_col_target">Destination</th>
+              </tr>
+            </thead>
+            <tbody id="browse-move-rows" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-800">
+          <span id="browse-move-summary" class="text-xs text-slate-400"></span>
+          <button id="browse-move-apply" data-action="applyBrowseMove" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_move_apply">Move</button>
         </div>
       </div>
 

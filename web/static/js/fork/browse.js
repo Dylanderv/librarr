@@ -102,6 +102,7 @@ async function openBrowsePath(path) {
   // after this call.
   state.browseSelection = [];
   closeBrowseMerge();
+  closeBrowseMove();
   hideBrowseMergeReport();
   renderBrowseSelectBar();
   // The file panel is anchored to one file, which the new listing no longer shows.
@@ -171,6 +172,7 @@ function clearBrowseListing() {
   closeBrowseFileMeta();
   state.browseSelection = [];
   closeBrowseMerge();
+  closeBrowseMove();
   hideBrowseMergeReport();
   renderBrowseSelectBar();
   document.getElementById('browse-rename-btn').classList.add('hidden');
@@ -247,14 +249,15 @@ function browseRow(entry, targetPath, isParent) {
   meta.appendChild(modified);
   row.appendChild(meta);
 
-  // Only folders are selectable: merging is a folder operation.
-  return entry.is_dir ? browseSelectableRow(row, targetPath) : row;
+  // Folders and files are tickable: folders feed the merge panel, files the
+  // move panel. The bar and its buttons sort out which applies.
+  return browseSelectableRow(row, targetPath, entry.is_dir);
 }
 
-// browseSelectableRow puts the merge tick-box beside a folder row rather than
-// inside it: the row itself is a <button> that opens the folder, and a checkbox
+// browseSelectableRow puts the tick-box beside a listing row rather than
+// inside it: a folder row is a <button> that opens the folder, and a checkbox
 // nested in a button would toggle on every navigation click.
-function browseSelectableRow(row, path) {
+function browseSelectableRow(row, path, isDir) {
   const wrap = document.createElement('div');
   wrap.className = 'flex items-center gap-2 pl-4';
 
@@ -263,9 +266,11 @@ function browseSelectableRow(row, path) {
   cb.className = 'shrink-0 rounded border-slate-600 bg-slate-800';
   cb.dataset.actionChange = 'browseSelect';
   cb.dataset.path = path;
+  cb.dataset.isdir = isDir ? '1' : '0';
   cb.checked = state.browseSelection.includes(path);
-  cb.title = t('browse_select_folder');
-  cb.setAttribute('aria-label', t('browse_select_folder'));
+  const hint = isDir ? t('browse_select_folder') : t('browse_select_file');
+  cb.title = hint;
+  cb.setAttribute('aria-label', hint);
   wrap.appendChild(cb);
 
   row.classList.remove('w-full');
@@ -634,7 +639,9 @@ function browseMoveDestinations() {
   const dests = [];
   if (state.browseParent) dests.push({ path: state.browseParent, label: t('browse_parent') });
   document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]')
-    .forEach(cb => dests.push({ path: cb.dataset.path, label: browseBaseName(cb.dataset.path) }));
+    .forEach(cb => {
+      if (cb.dataset.isdir === '1') dests.push({ path: cb.dataset.path, label: browseBaseName(cb.dataset.path) });
+    });
   return dests;
 }
 
@@ -720,14 +727,29 @@ function hideBrowseRenameError() {
 // explicit Apply. The server re-plans from the payload on apply, so the panel is
 // a view of the decision rather than the decision itself.
 
+// browseSelected splits the ticked rows by kind: folders merge, files move.
+// Read from the DOM (authoritative post-render) rather than a second state
+// copy that could drift from the tick-boxes.
+function browseSelected() {
+  const folders = [], files = [];
+  document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]:checked')
+    .forEach(cb => (cb.dataset.isdir === '1' ? folders : files).push(cb.dataset.path));
+  return { folders, files };
+}
+
 function renderBrowseSelectBar() {
   const n = state.browseSelection.length;
   // The bar shows from the first tick so Clear is always reachable, but merging
   // needs two folders — the button says so by being inert rather than by
   // answering an error after the click.
   document.getElementById('browse-select-bar').classList.toggle('hidden', n === 0);
-  document.getElementById('browse-select-count').textContent = t('browse_select_count', { count: n });
-  document.getElementById('browse-merge-btn').disabled = n < 2;
+  const { folders, files } = browseSelected();
+  document.getElementById('browse-select-count').textContent = files.length === 0
+    ? t('browse_select_count', { count: n })
+    : t('browse_select_count_mixed', { folders: folders.length, files: files.length });
+  document.getElementById('browse-merge-btn').disabled = folders.length < 2;
+  // Moving needs at least one file; folders never move (they merge).
+  document.getElementById('browse-move-btn').classList.toggle('hidden', files.length === 0);
 }
 
 function browseSelect(el) {
@@ -735,14 +757,16 @@ function browseSelect(el) {
   const i = state.browseSelection.indexOf(path);
   if (el.checked && i < 0) state.browseSelection.push(path);
   else if (!el.checked && i >= 0) state.browseSelection.splice(i, 1);
-  // An open preview was computed for the previous set of folders.
+  // An open preview was computed for the previous selection.
   if (state.mergeSources.length) closeBrowseMerge();
+  if (state.moveSources.length) closeBrowseMove();
   renderBrowseSelectBar();
 }
 
 function clearBrowseSelection() {
   state.browseSelection = [];
   closeBrowseMerge();
+  closeBrowseMove();
   document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]')
     .forEach(cb => { cb.checked = false; });
   renderBrowseSelectBar();
@@ -773,8 +797,9 @@ function browseMergeSuggestedName(paths) {
 }
 
 function openBrowseMerge() {
-  if (state.browseSelection.length < 2) return;
-  state.mergeSources = state.browseSelection.slice();
+  const { folders } = browseSelected();
+  if (folders.length < 2) return;
+  state.mergeSources = folders;
   state.mergeVolumes = {};
   state.mergePreview = null;
   hideBrowseMergeReport();
@@ -1010,6 +1035,160 @@ function showBrowseMergeError(message) {
 
 function hideBrowseMergeError() {
   document.getElementById('browse-merge-error').classList.add('hidden');
+}
+
+// ============================================================
+// BROWSE — MOVE (several files into one folder)
+// ============================================================
+// The tick-boxes grew past folders: ticked files feed this panel instead of
+// the merge one. Destinations are the parent plus the current subfolders —
+// same list the single-file move editor offers. Collisions are previewed
+// client-side from the destination listing (an existing endpoint, no new
+// round-trip type), and the server re-checks on apply, reporting per file
+// instead of failing the batch.
+function openBrowseMove() {
+  const { files } = browseSelected();
+  if (!files.length) return;
+  state.moveSources = files;
+  state.moveDest = null;
+  hideBrowseMergeReport();
+  hideBrowseMoveError();
+  const dests = browseMoveDestinations();
+  if (!dests.length) {
+    showToast(t('browse_move_no_dest'), 'error');
+    return;
+  }
+  const select = document.getElementById('browse-move-dest');
+  select.innerHTML = '';
+  dests.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.path;
+    opt.textContent = d.label;
+    select.appendChild(opt);
+  });
+  state.moveDest = select.value || null;
+  document.getElementById('browse-move-panel').classList.remove('hidden');
+  refreshBrowseMovePreview();
+}
+
+function closeBrowseMove() {
+  state.moveSources = [];
+  state.moveDest = null;
+  const panel = document.getElementById('browse-move-panel');
+  if (panel) panel.classList.add('hidden');
+  hideBrowseMoveError();
+}
+
+function hideBrowseMoveError() {
+  const el = document.getElementById('browse-move-error');
+  if (el) el.classList.add('hidden');
+}
+
+function showBrowseMoveError(message) {
+  const el = document.getElementById('browse-move-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+async function refreshBrowseMovePreview() {
+  if (!state.moveSources.length || !state.moveDest) return;
+  hideBrowseMoveError();
+  let listing;
+  try {
+    listing = await apiJson(`/api/files/list?path=${encodeURIComponent(state.moveDest)}`);
+  } catch (err) {
+    showBrowseMoveError(t('browse_move_preview_failed'));
+    document.getElementById('browse-move-apply').disabled = true;
+    return;
+  }
+  document.getElementById('browse-move-target').textContent =
+    t('browse_move_target', { name: browseBaseName(state.moveDest) });
+  const present = new Set((listing.entries || []).filter(e => !e.is_dir).map(e => e.name));
+  const body = document.getElementById('browse-move-rows');
+  body.innerHTML = '';
+  let movable = 0;
+  state.moveSources.forEach(src => {
+    const name = browseBaseName(src);
+    const taken = present.has(name);
+    if (!taken) movable++;
+    body.appendChild(browseMoveRow(name, taken));
+  });
+  document.getElementById('browse-move-summary').textContent = movable === 0
+    ? t('browse_move_nothing')
+    : t('browse_move_summary', { count: movable });
+  document.getElementById('browse-move-apply').disabled = movable === 0;
+}
+
+function browseMoveRow(name, taken) {
+  const tr = document.createElement('tr');
+  const from = document.createElement('td');
+  from.className = 'px-4 py-2 align-middle';
+  const nameEl = document.createElement('div');
+  nameEl.className = 'text-slate-300 break-all';
+  nameEl.textContent = name;
+  from.appendChild(nameEl);
+  tr.appendChild(from);
+  const to = document.createElement('td');
+  to.className = 'px-4 py-2 align-middle';
+  const dest = document.createElement('div');
+  dest.className = taken ? 'text-slate-500 break-all line-through' : 'text-emerald-300 break-all';
+  dest.textContent = name;
+  to.appendChild(dest);
+  if (taken) {
+    const why = document.createElement('div');
+    why.className = 'text-xs text-amber-300/90';
+    why.textContent = t('browse_move_status_exists');
+    to.appendChild(why);
+  }
+  tr.appendChild(to);
+  return tr;
+}
+
+async function applyBrowseMove() {
+  if (!state.moveSources.length || !state.moveDest) return;
+  const btn = document.getElementById('browse-move-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_move_applying');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/move', { sources: state.moveSources, dest: state.moveDest });
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseMoveError(err.message || t('browse_move_failed'));
+    return;
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+
+  showToast(t('browse_move_done', { count: data.moved ? data.moved.length : 0, name: browseBaseName(data.path) }),
+    data.skipped && data.skipped.length ? 'error' : 'success');
+
+  // The listing must refresh (and drop the selection) before the report
+  // describes the new state — openBrowsePath clears the shared report area.
+  await openBrowsePath(state.browsePath);
+  renderBrowseMoveReport(data);
+}
+
+// renderBrowseMoveReport reuses the merge report area: one write report at a
+// time, cleared on the next navigation like every other report here.
+function renderBrowseMoveReport(data) {
+  const el = document.getElementById('browse-merge-report');
+  el.innerHTML = '';
+  const lines = [];
+  lines.push({ text: t('browse_move_done', { count: data.moved ? data.moved.length : 0, name: browseBaseName(data.path) }), tone: 'text-slate-200' });
+  (data.skipped || []).forEach(sk => {
+    lines.push({ text: `${sk.name} — ${t(`browse_move_status_${sk.reason}`)}`, tone: 'text-amber-300/90' });
+  });
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'text-xs break-all ' + line.tone;
+    div.textContent = line.text;
+    el.appendChild(div);
+  });
+  el.classList.remove('hidden');
 }
 
 // ============================================================

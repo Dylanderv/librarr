@@ -515,6 +515,10 @@ const state = {
   mergeSources: [],
   mergeVolumes: {},
   mergePreview: null,
+  // Multi-move: the ticked files the panel was opened on, and the chosen
+  // destination. Kept apart from the live selection like the merge panel.
+  moveSources: [],
+  moveDest: null,
   // Metadata panels: the folder / file each was opened on. metaPreview holds the
   // last preview, and is dropped as soon as any input changes — applying a plan
   // the user is no longer looking at is exactly what decision 4 forbids.
@@ -2686,6 +2690,9 @@ const CLICK_ACTIONS = {
   openBrowseMerge: () => openBrowseMerge(),
   closeBrowseMerge: () => closeBrowseMerge(),
   applyBrowseMerge: () => applyBrowseMerge(),
+  openBrowseMove: () => openBrowseMove(),
+  closeBrowseMove: () => closeBrowseMove(),
+  applyBrowseMove: () => applyBrowseMove(),
   openBrowseMeta: () => openBrowseMeta(),
   closeBrowseMeta: () => closeBrowseMeta(),
   previewBrowseMeta: () => previewBrowseMeta(),
@@ -2757,6 +2764,10 @@ const CHANGE_ACTIONS = {
   // The target name feeds every destination in the table, so it re-previews.
   browseMergeSeries: () => refreshBrowseMergePreview(),
   browseMergeVolume: el => browseMergeVolume(el),
+  browseMoveDest: el => {
+    state.moveDest = el.value || null;
+    refreshBrowseMovePreview();
+  },
   browseMetaToggle: el => browseMetaToggle(el),
   // Candidates belong to the source that produced them: switching source
   // leaves a list that no longer matches the selector above it.

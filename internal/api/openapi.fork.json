@@ -1486,7 +1486,7 @@
     },
     "/api/files/move": {
       "post": {
-        "summary": "Move one file into another library folder (admin)",
+        "summary": "Move one file or a batch of files into another library folder (admin)",
         "description": "The file keeps its name; an occupied name is a 409, never an overwrite. Only files can be moved (folders relocate through merge). Both the source and destination listings are invalidated.",
         "requestBody": {
           "required": true,
@@ -1495,13 +1495,19 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "path",
                   "dest"
                 ],
                 "properties": {
                   "path": {
                     "type": "string",
-                    "description": "Absolute path of the file to move"
+                    "description": "Absolute path of the file (single-file shape)"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Absolute paths of the files (batch shape, max 500)"
                   },
                   "dest": {
                     "type": "string",
@@ -1514,7 +1520,7 @@
         },
         "responses": {
           "200": {
-            "description": "Moved",
+            "description": "Moved (single shape) or per-file report (batch shape)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1525,6 +1531,40 @@
                     },
                     "path": {
                       "type": "string"
+                    },
+                    "moved": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "exists",
+                              "missing",
+                              "not_file",
+                              "in_place"
+                            ]
+                          }
+                        }
+                      }
                     }
                   }
                 }
