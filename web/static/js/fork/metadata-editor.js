@@ -558,10 +558,10 @@ function lockBrowseFileMeta(reason) {
   }
   banner.textContent = t('browse_meta_status_unsupported') + ' — ' + t(`browse_meta_reason_${reason}`);
   banner.classList.remove('hidden');
-  // A CBR is the one locked format with a way out: repack it as CBZ and the
-  // panel above becomes editable. Every other format stays convert-less.
+  // CBR and PDF are the locked formats with a way out: repack as CBZ and
+  // the panel above becomes editable. Every other format stays convert-less.
   document.getElementById('browse-file-convert').classList
-    .toggle('hidden', reason !== 'cbr_rar_archive');
+    .toggle('hidden', reason !== 'cbr_rar_archive' && reason !== 'pdf_ignored_by_kavita');
 }
 
 function closeBrowseFileMeta() {

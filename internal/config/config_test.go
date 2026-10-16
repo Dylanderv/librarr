@@ -11,6 +11,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"LIBRARR_PORT", "LIBRARR_DB_PATH", "QB_URL", "QB_USER", "QB_PASS",
 		"PROWLARR_URL", "PROWLARR_API_KEY", "FILE_ORG_ENABLED",
 		"ANNAS_ARCHIVE_DOMAIN", "RATE_LIMIT_ENABLED", "METRICS_ENABLED",
+		"PDF_DPI", "PDF_JPEG_QUALITY",
 		"MIN_TORRENT_SIZE_BYTES", "MAX_TORRENT_SIZE_BYTES",
 		"AUTH_USERNAME", "AUTH_PASSWORD", "API_KEY",
 		"OIDC_ENABLED", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
@@ -36,6 +37,12 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Run("qb user default", func(t *testing.T) {
 		if cfg.QBUser != "admin" {
 			t.Errorf("expected admin, got %s", cfg.QBUser)
+		}
+	})
+
+	t.Run("pdf conversion defaults", func(t *testing.T) {
+		if cfg.PDFDPI != 200 || cfg.PDFJPEGQuality != 90 {
+			t.Errorf("expected PDF 200/90, got %d/%d", cfg.PDFDPI, cfg.PDFJPEGQuality)
 		}
 	})
 

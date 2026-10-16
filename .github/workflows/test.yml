@@ -23,6 +23,8 @@ jobs:
           fi
       - name: go build
         run: go build -o librarr ./cmd/librarr/
+      - name: install poppler (PDF to CBZ tests shell out to pdftoppm)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
       - name: go build 32-bit (release cross-compile guard)
         # goreleaser builds linux/arm among others: an untyped constant that
         # overflows int32 passes 64-bit CI and fails the release otherwise.

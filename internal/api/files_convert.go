@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/convert"
 )
 
@@ -67,15 +68,15 @@ type batchConvertResponse struct {
 
 // Reasons a source is left unconverted.
 const (
-	convertFailExists    = "exists"
-	convertFailMissing   = "missing"
-	convertFailNotFile   = "not_file"
-	convertFailNotCBR    = "not_cbr"
-	convertFailEncrypted = "encrypted"
-	convertFailEmpty     = "empty"
-	convertFailUnsafe    = "unsafe"
-	convertFailConvert   = "failed"
-	convertFailRemove    = "remove_failed"
+	convertFailExists       = "exists"
+	convertFailMissing      = "missing"
+	convertFailNotFile      = "not_file"
+	convertFailNotSupported = "not_supported"
+	convertFailEncrypted    = "encrypted"
+	convertFailEmpty        = "empty"
+	convertFailUnsafe       = "unsafe"
+	convertFailConvert      = "failed"
+	convertFailRemove       = "remove_failed"
 )
 
 // maxConvertSources bounds one batch request, like maxMoveSources bounds a move.
@@ -104,8 +105,9 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 		writeLibraryPathError(w, err)
 		return
 	}
-	if !strings.EqualFold(filepath.Ext(src), ".cbr") {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "only .cbr files can be converted"})
+	kind, ok := convertibleKind(src)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "only .cbr and .pdf files can be converted"})
 		return
 	}
 	info, err := os.Stat(src)
@@ -122,7 +124,7 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := convert.CBRToCBZ(src)
+	res, err := convertByKind(kind, src, pdfOptionsFor(s.cfg))
 	if err != nil {
 		switch {
 		case errors.Is(err, convert.ErrExists):
@@ -131,6 +133,8 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 			errors.Is(err, convert.ErrUnsafe),
 			errors.Is(err, convert.ErrEmpty):
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		case errors.Is(err, convert.ErrNoPoppler):
+			writeJSON(w, http.StatusNotImplemented, map[string]any{"error": err.Error()})
 		default:
 			writeError(w, http.StatusInternalServerError, "failed to convert archive", err)
 		}
@@ -179,6 +183,15 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 		srcs = append(srcs, src)
 	}
 
+	// A missing renderer is a system problem, not a per-file one: fail the
+	// whole request instead of one failed row per PDF.
+	for _, src := range srcs {
+		if strings.EqualFold(filepath.Ext(src), ".pdf") && !convert.HavePoppler() {
+			writeJSON(w, http.StatusNotImplemented, map[string]any{"error": convert.ErrNoPoppler.Error()})
+			return
+		}
+	}
+
 	out := batchConvertResponse{Converted: []batchConvertedFile{}}
 	touched := map[string]bool{}
 	for _, src := range srcs {
@@ -199,11 +212,12 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 			fail(convertFailNotFile, "")
 			continue
 		}
-		if !strings.EqualFold(filepath.Ext(src), ".cbr") {
-			fail(convertFailNotCBR, "")
+		kind, ok := convertibleKind(src)
+		if !ok {
+			fail(convertFailNotSupported, "")
 			continue
 		}
-		res, err := convert.CBRToCBZ(src)
+		res, err := convertByKind(kind, src, pdfOptionsFor(s.cfg))
 		if err != nil {
 			switch {
 			case errors.Is(err, convert.ErrExists):
@@ -238,4 +252,34 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 	slog.Info("cbr batch converted", "converted", len(out.Converted), "failed", len(out.Failed))
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+// convertibleKind reports whether src is convertible and which pipeline it
+// needs: "cbr" for the RAR repack, "pdf" for the poppler rendering.
+func convertibleKind(src string) (string, bool) {
+	switch strings.ToLower(filepath.Ext(src)) {
+	case ".cbr":
+		return "cbr", true
+	case ".pdf":
+		return "pdf", true
+	default:
+		return "", false
+	}
+}
+
+// convertByKind dispatches one source to its pipeline.
+func convertByKind(kind, src string, pdfOpts convert.PDFOptions) (convert.Result, error) {
+	if kind == "pdf" {
+		return convert.PDFToCBZ(src, pdfOpts)
+	}
+	return convert.CBRToCBZ(src)
+}
+
+// pdfOptionsFor reads the rendering options from the server config, falling
+// back to the converter defaults when unset.
+func pdfOptionsFor(cfg *config.Config) convert.PDFOptions {
+	if cfg == nil {
+		return convert.PDFOptions{}
+	}
+	return convert.PDFOptions{DPI: cfg.PDFDPI, JPEGQuality: cfg.PDFJPEGQuality}
 }
