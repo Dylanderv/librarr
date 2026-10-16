@@ -108,6 +108,11 @@ async function openBrowsePath(path) {
   document.getElementById('browse-rename-btn').classList.toggle('hidden', state.browseIsRoot);
   // Same for a folder-wide metadata edit: at the root it would cover every series.
   document.getElementById('browse-meta-btn').classList.toggle('hidden', state.browseIsRoot);
+  // Creating a child of the current folder is always allowed — including under
+  // a root, which is the main use case. A navigation drops the open panel, like
+  // the rename and metadata ones above.
+  closeBrowseMkdir();
+  document.getElementById('browse-mkdir-btn').classList.remove('hidden');
   renderBrowseRoots();
   renderBrowseBreadcrumb(data);
   renderBrowseEntries(data);
@@ -168,6 +173,8 @@ function clearBrowseListing() {
   renderBrowseSelectBar();
   document.getElementById('browse-rename-btn').classList.add('hidden');
   document.getElementById('browse-meta-btn').classList.add('hidden');
+  document.getElementById('browse-mkdir-btn').classList.add('hidden');
+  closeBrowseMkdir();
   document.getElementById('browse-breadcrumb').innerHTML = '';
   document.getElementById('browse-list').innerHTML = '';
   document.getElementById('browse-empty').classList.add('hidden');
@@ -914,6 +921,67 @@ function hideBrowseMergeError() {
   document.getElementById('browse-merge-error').classList.add('hidden');
 }
 
+// ============================================================
+// BROWSE — MKDIR (one empty folder inside the current one)
+// ============================================================
+// No preview: there is nothing to plan. The toolbar button opens a small panel
+// with a name field, and Create writes exactly one directory. The name is
+// sanitized server-side (same SanitizeSegment as rename), so what the server
+// kept is what the toast names — not necessarily what was typed.
+function openBrowseMkdir() {
+  if (!state.browsePath) return;
+  document.getElementById('browse-mkdir-error').classList.add('hidden');
+  const input = document.getElementById('browse-mkdir-name');
+  input.value = '';
+  document.getElementById('browse-mkdir-panel').classList.remove('hidden');
+  input.focus();
+}
+
+function closeBrowseMkdir() {
+  const panel = document.getElementById('browse-mkdir-panel');
+  if (panel) panel.classList.add('hidden');
+  const err = document.getElementById('browse-mkdir-error');
+  if (err) err.classList.add('hidden');
+}
+
+function showBrowseMkdirError(message) {
+  const el = document.getElementById('browse-mkdir-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+async function applyBrowseMkdir() {
+  const input = document.getElementById('browse-mkdir-name');
+  const name = (input.value || '').trim();
+  if (!name) {
+    showBrowseMkdirError(t('browse_mkdir_name_required'));
+    input.focus();
+    return;
+  }
+  const btn = document.getElementById('browse-mkdir-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_mkdir_creating');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/mkdir', { path: state.browsePath, name });
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseMkdirError(err.message || t('browse_mkdir_failed'));
+    return;
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+
+  showToast(t('browse_mkdir_done', { name: (data && data.name) || name }), 'success');
+  closeBrowseMkdir();
+  // Stay where we are: the new folder appears in the refreshed listing, and
+  // the user clicks into it if that is where they wanted to go.
+  await openBrowsePath(state.browsePath);
+}
+
 // Typing the series name in the Browse rename panel re-previews, debounced so it
 // doesn't hammer the endpoint. Only the rows are re-rendered, so the series field
 // keeps its focus and caret while the preview refreshes under it.
@@ -922,4 +990,10 @@ document.addEventListener('input', e => {
   if (e.target.id !== 'browse-rename-series') return;
   clearTimeout(browseRenameTimer);
   browseRenameTimer = setTimeout(refreshBrowseRenamePreview, 400);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.id !== 'browse-mkdir-name') return;
+  if (e.key === 'Enter') applyBrowseMkdir();
+  if (e.key === 'Escape') closeBrowseMkdir();
 });

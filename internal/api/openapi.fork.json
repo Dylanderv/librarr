@@ -1349,6 +1349,140 @@
           }
         }
       }
+    },
+    "/api/files/mkdir": {
+      "post": {
+        "summary": "Create one empty folder inside a library (admin)",
+        "description": "The name is a single segment sanitized with the same rules as rename; the sanitized name is what is created and returned. The parent may be a library root. The parent listing is invalidated so Browse shows the new folder immediately.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "name"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Absolute path of the parent directory"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "New folder name (single segment, sanitized server-side)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON body, empty/invalid name, or parent is not a directory"
+          },
+          "403": {
+            "description": "Path outside the libraries"
+          },
+          "404": {
+            "description": "Parent directory not found"
+          },
+          "409": {
+            "description": "A folder already has that name"
+          },
+          "503": {
+            "description": "No library directory is configured"
+          }
+        }
+      }
+    },
+    "/api/files/convert": {
+      "post": {
+        "summary": "Repack one .cbr as .cbz in place (admin)",
+        "description": "Automates the manual unpack-RAR/repack-ZIP workaround with a pure-Go RAR reader: creates Name.cbz next to the source with identical contents, then removes the .cbr. Directories, links and encrypted entries are refused or reported, never guessed at.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Absolute path of the .cbr file"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Converted; the source was replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "files": {
+                      "type": "integer"
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a .cbr file, encrypted, unsafe entry, or empty archive"
+          },
+          "403": {
+            "description": "Path outside the libraries"
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "409": {
+            "description": "A file already has the converted name"
+          },
+          "503": {
+            "description": "No library directory is configured"
+          }
+        }
+      }
     }
   },
   "components": {
