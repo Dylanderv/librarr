@@ -2675,6 +2675,13 @@ const CLICK_ACTIONS = {
   },
   // Cancelling just re-renders the listing from the server.
   cancelBrowseFileRename: () => openBrowsePath(state.browsePath),
+  startBrowseFileMove: el => startBrowseFileMove(el),
+  commitBrowseFileMove: el => {
+    const editor = el.closest('.browse-move-inline');
+    const select = editor && editor.querySelector('select');
+    if (select) commitBrowseFileMove(el.dataset.path, select.value, el);
+  },
+  cancelBrowseFileMove: () => openBrowsePath(state.browsePath),
   clearBrowseSelection: () => clearBrowseSelection(),
   openBrowseMerge: () => openBrowseMerge(),
   closeBrowseMerge: () => closeBrowseMerge(),

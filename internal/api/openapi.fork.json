@@ -1483,6 +1483,71 @@
           }
         }
       }
+    },
+    "/api/files/move": {
+      "post": {
+        "summary": "Move one file into another library folder (admin)",
+        "description": "The file keeps its name; an occupied name is a 409, never an overwrite. Only files can be moved (folders relocate through merge). Both the source and destination listings are invalidated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "dest"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Absolute path of the file to move"
+                  },
+                  "dest": {
+                    "type": "string",
+                    "description": "Absolute path of the destination folder (a library root is allowed)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON body, source is a folder, dest is not a folder, or already there"
+          },
+          "403": {
+            "description": "Path outside the libraries"
+          },
+          "404": {
+            "description": "File or destination not found"
+          },
+          "409": {
+            "description": "A file already has this name in the destination"
+          },
+          "503": {
+            "description": "No library directory is configured"
+          }
+        }
+      }
     }
   },
   "components": {

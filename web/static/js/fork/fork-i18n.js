@@ -150,6 +150,14 @@ Object.assign(I18N.en, {
     browse_convert_done: 'Converted {count} file(s) to {name}',
     browse_convert_done_skipped: 'Converted {count} file(s) to {name} ({skipped} item(s) left out)',
     browse_convert_failed: 'Failed to convert this file',
+    // Single-file move into another folder
+    browse_move_file: 'Move this file',
+    browse_move_file_save: 'Move',
+    browse_move_file_saving: 'Moving…',
+    browse_move_file_cancel: 'Cancel',
+    browse_move_file_done: 'Moved to {name}',
+    browse_move_file_failed: 'Failed to move this file',
+    browse_move_no_dest: 'No folder to move to — create one first',
     // Browse — new folder
     browse_mkdir: 'New folder',
     browse_mkdir_title: 'New folder',
@@ -351,6 +359,14 @@ Object.assign(I18N.ru, {
     browse_convert_done: 'Конвертировано {count} файл(ов) в {name}',
     browse_convert_done_skipped: 'Конвертировано {count} файл(ов) в {name} (пропущено: {skipped})',
     browse_convert_failed: 'Не удалось конвертировать файл',
+    // Single-file move into another folder
+    browse_move_file: 'Переместить файл',
+    browse_move_file_save: 'Переместить',
+    browse_move_file_saving: 'Перемещение…',
+    browse_move_file_cancel: 'Отмена',
+    browse_move_file_done: 'Перемещено в {name}',
+    browse_move_file_failed: 'Не удалось переместить файл',
+    browse_move_no_dest: 'Нет папки для перемещения — создайте её',
 });
 
 // app.js already ran applyLanguage() during init before this file loaded;
