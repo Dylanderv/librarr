@@ -83,7 +83,7 @@ async function enqueue(dialog_id, message_id) {
 async function loadJobs() {
   const j = await api('/downloads');
   $('jobs').innerHTML = '<tr><th>job</th><th>cat</th><th>statut</th><th>progression</th><th>fichier</th><th></th></tr>' + j.map(x =>
-    `<tr><td>${x.id.slice(0, 8)}</td><td>${x.category}</td><td>${x.status}${x.error ? '<br><small>' + x.error + '</small>' : ''}</td><td><div class="bar"><div style="width:${(x.progress * 100).toFixed(0)}%"></div></div>${(x.progress * 100).toFixed(0)}%</td><td><small>${x.filename || ''}</small></td><td>${['queued', 'downloading'].includes(x.status) ? `<button onclick="cancelJob('${x.id}')">Annuler</button>` : ''}</td></tr>`).join('');
+    `<tr><td>${x.id.slice(0, 8)}</td><td>${x.category}</td><td>${x.status}${x.error ? '<br><small>' + x.error + '</small>' : ''}</td><td><div class="bar"><div style="width:${(x.progress * 100).toFixed(0)}%"></div></div>${(x.progress * 100).toFixed(0)}%</td><td><small>${x.filename || ('message #' + x.message_id)}${x.size_bytes ? ' · ' + (x.size_bytes / 1048576).toFixed(1) + ' Mo' : ''}</small></td><td>${['queued', 'downloading'].includes(x.status) ? `<button onclick="cancelJob('${x.id}')">Annuler</button>` : ''}</td></tr>`).join('');
 }
 async function cancelJob(id) { await api('/downloads/' + id, { method: 'DELETE' }); loadJobs(); }
 setInterval(() => { if ($('auto').checked && KEY) loadJobs(); }, 3000);

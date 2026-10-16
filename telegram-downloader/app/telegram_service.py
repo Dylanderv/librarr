@@ -171,6 +171,26 @@ async def search_attachments(dialog_id: int, query: str = "", limit: int = 50):
     return out
 
 
+async def peek_attachment(dialog_id: int, message_id: int) -> dict:
+    """Nom/taille d'une pièce jointe sans la télécharger. Lecture seule.
+
+    Best-effort : ne lève jamais, renvoie des champs None quand Telegram est
+    injoignable ou que le message n'a pas de fichier. Sert à afficher un nom
+    dans la file d'attente avant (et pendant) le téléchargement.
+    """
+    try:
+        client = await get_client()
+        msg = await client.get_messages(dialog_id, ids=message_id)
+        if not msg or not msg.file:
+            return {"filename": None, "size_bytes": None}
+        return {
+            "filename": getattr(msg.file, "name", None),
+            "size_bytes": getattr(msg.file, "size", None),
+        }
+    except Exception:
+        return {"filename": None, "size_bytes": None}
+
+
 async def download_attachment(
     dialog_id: int, message_id: int, category: str, progress_cb=None
 ) -> dict:

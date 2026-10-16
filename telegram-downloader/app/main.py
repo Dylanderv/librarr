@@ -42,6 +42,12 @@ async def worker_loop():
             await store.update_job(
                 settings.telegram_db_path, job["id"], status="downloading", progress=0.0
             )
+            # Nom/taille connus dès le début du download (le worker les
+            # résolvait seulement à la fin, d'où une file aveugle).
+            meta = await tg.peek_attachment(job["dialog_id"], job["message_id"])
+            fill = {k: v for k, v in meta.items() if v is not None}
+            if fill:
+                await store.update_job(settings.telegram_db_path, job["id"], **fill)
 
             def _cb(done, total):
                 if job["id"] in cancelled:
@@ -190,6 +196,11 @@ async def enqueue_dl(body: EnqueueDownloadIn, _: None = Depends(require_api_key)
     job = await store.enqueue(
         settings.telegram_db_path, body.dialog_id, body.message_id, body.category.value
     )
+    meta = await tg.peek_attachment(body.dialog_id, body.message_id)
+    fill = {k: v for k, v in meta.items() if v is not None}
+    if fill:
+        await store.update_job(settings.telegram_db_path, job["id"], **fill)
+        job = await store.get_job(settings.telegram_db_path, job["id"])
     return job
 
 
