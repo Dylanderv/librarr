@@ -519,6 +519,8 @@ const state = {
   // destination. Kept apart from the live selection like the merge panel.
   moveSources: [],
   moveDest: null,
+  // Bulk convert: the ticked CBR paths the panel was opened on.
+  convertSources: [],
   // Metadata panels: the folder / file each was opened on. metaPreview holds the
   // last preview, and is dropped as soon as any input changes — applying a plan
   // the user is no longer looking at is exactly what decision 4 forbids.
@@ -2693,6 +2695,9 @@ const CLICK_ACTIONS = {
   openBrowseMove: () => openBrowseMove(),
   closeBrowseMove: () => closeBrowseMove(),
   applyBrowseMove: () => applyBrowseMove(),
+  openBrowseConvert: () => openBrowseConvert(),
+  closeBrowseConvert: () => closeBrowseConvert(),
+  applyBrowseConvert: () => applyBrowseConvert(),
   openBrowseMeta: () => openBrowseMeta(),
   closeBrowseMeta: () => closeBrowseMeta(),
   previewBrowseMeta: () => previewBrowseMeta(),

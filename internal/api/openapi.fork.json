@@ -1417,7 +1417,7 @@
     },
     "/api/files/convert": {
       "post": {
-        "summary": "Repack one .cbr as .cbz in place (admin)",
+        "summary": "Repack .cbr files as .cbz in place, one or many (admin)",
         "description": "Automates the manual unpack-RAR/repack-ZIP workaround with a pure-Go RAR reader: creates Name.cbz next to the source with identical contents, then removes the .cbr. Directories, links and encrypted entries are refused or reported, never guessed at.",
         "requestBody": {
           "required": true,
@@ -1425,13 +1425,17 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "path"
-                ],
                 "properties": {
                   "path": {
                     "type": "string",
-                    "description": "Absolute path of the .cbr file"
+                    "description": "Absolute path of the .cbr file (single shape)"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Absolute paths of the .cbr files (batch shape, max 100)"
                   }
                 }
               }
@@ -1480,6 +1484,63 @@
           },
           "503": {
             "description": "No library directory is configured"
+          },
+          "200": {
+            "description": "Batch report: what converted and what did not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "converted": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "files": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "exists",
+                              "missing",
+                              "not_file",
+                              "not_cbr",
+                              "encrypted",
+                              "empty",
+                              "unsafe",
+                              "failed",
+                              "remove_failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
@@ -122,5 +123,106 @@ func TestConvertRejectsBadRequests(t *testing.T) {
 				t.Errorf("status = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func decodeBatchConvert(t *testing.T, rec *httptest.ResponseRecorder) batchConvertResponse {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var out batchConvertResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, rec.Body.String())
+	}
+	return out
+}
+
+func TestConvertBatchSuccess(t *testing.T) {
+	s, manga := newBrowseFixture(t)
+	writeTestCBR(t, filepath.Join(manga, "a.cbr"), "p1.jpg", []byte{1})
+	writeTestCBR(t, filepath.Join(manga, "b.cbr"), "p2.jpg", []byte{2})
+
+	decodeList(t, doList(t, s, manga))
+
+	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+		Sources: []string{filepath.Join(manga, "a.cbr"), filepath.Join(manga, "b.cbr")},
+	}))
+	if len(out.Converted) != 2 || len(out.Failed) != 0 {
+		t.Fatalf("unexpected response: %+v", out)
+	}
+	for _, name := range []string{"a.cbz", "b.cbz"} {
+		if _, err := os.Stat(filepath.Join(manga, name)); err != nil {
+			t.Errorf("%s missing on disk: %v", name, err)
+		}
+	}
+	for _, name := range []string{"a.cbr", "b.cbr"} {
+		if _, err := os.Stat(filepath.Join(manga, name)); !os.IsNotExist(err) {
+			t.Errorf("source %s must be gone", name)
+		}
+	}
+	if n := len(decodeList(t, doList(t, s, manga)).Entries); n != 2 {
+		t.Errorf("listing has %d entries, want 2", n)
+	}
+}
+
+func TestConvertBatchReportsFailures(t *testing.T) {
+	s, manga := newBrowseFixture(t)
+	writeTestCBR(t, filepath.Join(manga, "ok.cbr"), "p.jpg", []byte{1})
+	writeTestCBR(t, filepath.Join(manga, "taken.cbr"), "p.jpg", []byte{1})
+	mustWriteN(t, filepath.Join(manga, "taken.cbz"), 3)
+	mustWriteN(t, filepath.Join(manga, "plain.cbz"), 3)
+	mustMkdir(t, filepath.Join(manga, "somedir"))
+
+	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+		Sources: []string{
+			filepath.Join(manga, "ok.cbr"),
+			filepath.Join(manga, "taken.cbr"),
+			filepath.Join(manga, "gone.cbr"),
+			filepath.Join(manga, "plain.cbz"),
+			filepath.Join(manga, "somedir"),
+		},
+	}))
+	if len(out.Converted) != 1 || out.Converted[0].Name != "ok.cbz" {
+		t.Fatalf("converted = %+v, want [ok.cbz]", out.Converted)
+	}
+	failed := map[string]string{}
+	for _, f := range out.Failed {
+		failed[f.Name] = f.Reason
+	}
+	if failed["taken.cbr"] != convertFailExists ||
+		failed["gone.cbr"] != convertFailMissing ||
+		failed["plain.cbz"] != convertFailNotCBR ||
+		failed["somedir"] != convertFailNotFile {
+		t.Errorf("failed = %+v", out.Failed)
+	}
+}
+
+func TestConvertBatchRejectsBadRequests(t *testing.T) {
+	s, manga := newBrowseFixture(t)
+	writeTestCBR(t, filepath.Join(manga, "a.cbr"), "p.jpg", []byte{1})
+
+	cases := []struct {
+		name string
+		body convertRequest
+		want int
+	}{
+		{"no sources", convertRequest{}, http.StatusBadRequest},
+		{"source traversal aborts all", convertRequest{
+			Sources: []string{filepath.Join(manga, "a.cbr"), filepath.Join(manga, "..", "x.cbr")},
+		}, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := doConvert(t, s, tc.body).Code; got != tc.want {
+				t.Errorf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(manga, "a.cbr")); err != nil {
+		t.Error("aborted batch must convert nothing")
+	}
+	if _, err := os.Stat(filepath.Join(manga, "a.cbz")); !os.IsNotExist(err) {
+		t.Error("aborted batch must leave no output")
 	}
 }
