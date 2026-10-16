@@ -120,6 +120,11 @@ async function openBrowsePath(path) {
   renderBrowseRoots();
   renderBrowseBreadcrumb(data);
   renderBrowseEntries(data);
+  // Badges for in-flight telegram downloads: painted from the last fetch
+  // immediately, then refreshed from the server (in place — no re-render, so
+  // open inline editors survive the poll).
+  applyBrowseDownloadBadges();
+  refreshBrowseDownloads();
 }
 
 function renderBrowseRoots() {
@@ -234,7 +239,7 @@ function browseRow(entry, targetPath, isParent) {
   if (isParent) return row;
 
   const meta = document.createElement('span');
-  meta.className = 'shrink-0 flex items-center gap-3 text-xs text-slate-500';
+  meta.className = 'browse-row-meta shrink-0 flex items-center gap-3 text-xs text-slate-500';
   if (!entry.is_dir) {
     meta.appendChild(browseFileMetaButton(targetPath));
     meta.appendChild(browseRenameFileButton());
@@ -254,6 +259,62 @@ function browseRow(entry, targetPath, isParent) {
   // Folders and files are tickable: folders feed the merge panel, files the
   // move panel. The bar and its buttons sort out which applies.
   return browseSelectableRow(row, targetPath, entry.is_dir, entry.kind || '');
+}
+
+// refreshBrowseDownloads fetches the sidecar's in-flight files and repaints
+// the badges. Failures keep the last known state: the sidecar is optional.
+async function refreshBrowseDownloads() {
+  if (state.currentTab !== 'browse') return;
+  try {
+    const items = await apiJson('/api/files/downloads');
+    const active = {};
+    (items || []).forEach(it => { if (it.name) active[it.name] = it; });
+    state.browseDownloads = active;
+  } catch (err) {
+    return;
+  }
+  applyBrowseDownloadBadges();
+}
+
+function startBrowseDownloadPolling() {
+  stopBrowseDownloadPolling();
+  refreshBrowseDownloads();
+  state.browseDlTimer = setInterval(refreshBrowseDownloads, 5000);
+}
+
+function stopBrowseDownloadPolling() {
+  if (state.browseDlTimer) {
+    clearInterval(state.browseDlTimer);
+    state.browseDlTimer = null;
+  }
+}
+
+// applyBrowseDownloadBadges marks file rows that match an in-flight download
+// by file name, with a progress bar. In place: never re-renders the listing.
+function applyBrowseDownloadBadges() {
+  const active = state.browseDownloads || {};
+  document.querySelectorAll('#browse-list [data-file-path]').forEach(row => {
+    const name = row.dataset.fileName;
+    const dl = name && active[name];
+    const meta = row.querySelector(':scope > .browse-row-meta');
+    if (!meta) return;
+    let badge = meta.querySelector(':scope > .browse-dl-badge');
+    if (!dl) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'browse-dl-badge shrink-0 hidden sm:flex items-center gap-1.5 text-xs';
+      badge.innerHTML = '<span class="block w-16 h-1.5 rounded bg-slate-700 overflow-hidden"><span class="block h-full bg-sky-500 rounded"></span></span><span class="tabular-nums text-sky-300/90"></span>';
+      meta.insertBefore(badge, meta.firstChild);
+    }
+    const pct = Math.round((dl.progress || 0) * 100);
+    badge.firstChild.firstChild.style.width = `${pct}%`;
+    const label = dl.status === 'queued' ? t('browse_dl_queued') : `${pct}%`;
+    badge.lastChild.textContent = label;
+    badge.title = `${name} — ${label}`;
+  });
 }
 
 // browseSelectableRow puts the tick-box beside a listing row rather than

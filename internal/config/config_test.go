@@ -12,6 +12,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"PROWLARR_URL", "PROWLARR_API_KEY", "FILE_ORG_ENABLED",
 		"ANNAS_ARCHIVE_DOMAIN", "RATE_LIMIT_ENABLED", "METRICS_ENABLED",
 		"PDF_DPI", "PDF_JPEG_QUALITY",
+		"TELEGRAM_SIDECAR_URL", "TELEGRAM_SIDECAR_API_KEY",
 		"MIN_TORRENT_SIZE_BYTES", "MAX_TORRENT_SIZE_BYTES",
 		"AUTH_USERNAME", "AUTH_PASSWORD", "API_KEY",
 		"OIDC_ENABLED", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
@@ -37,6 +38,12 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Run("qb user default", func(t *testing.T) {
 		if cfg.QBUser != "admin" {
 			t.Errorf("expected admin, got %s", cfg.QBUser)
+		}
+	})
+
+	t.Run("telegram sidecar defaults", func(t *testing.T) {
+		if cfg.TelegramSidecarURL != "http://telegram-downloader:5051" || cfg.TelegramSidecarAPIKey != "" {
+			t.Errorf("expected sidecar defaults, got %q/%q", cfg.TelegramSidecarURL, cfg.TelegramSidecarAPIKey)
 		}
 	})
 

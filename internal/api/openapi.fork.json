@@ -1741,6 +1741,42 @@
           }
         }
       }
+    },
+    "/api/files/downloads": {
+      "get": {
+        "summary": "In-flight telegram downloads for Browse badges (admin)",
+        "description": "Proxies the telegram-downloader sidecar (TELEGRAM_SIDECAR_URL/_API_KEY), keeping only queued/downloading jobs with a known filename. The sidecar is optional: unreachable means an empty list with a short backoff, never an error. Matched by the front end on the bare file name.",
+        "responses": {
+          "200": {
+            "description": "Active downloads (possibly empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "progress": {
+                        "type": "number"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "queued",
+                          "downloading"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
