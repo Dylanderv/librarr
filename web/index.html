@@ -297,10 +297,15 @@
 
       <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
         <nav id="browse-breadcrumb" class="flex items-center flex-wrap gap-1 text-sm text-slate-400"></nav>
-        <!-- Both hidden on a library root: renaming it would move the whole
-             library, and a folder-wide metadata edit there would cover every
-             series at once. -->
+        <!-- Rename and Metadata are hidden on a library root: renaming it would
+             move the whole library, and a folder-wide metadata edit there would
+             cover every series at once. New folder stays visible everywhere —
+             creating a child of a root is the main use case. -->
         <div class="flex items-center gap-2">
+          <button id="browse-mkdir-btn" data-action="openBrowseMkdir" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            <span data-i18n="browse_mkdir">New folder</span>
+          </button>
           <button id="browse-meta-btn" data-action="openBrowseMeta" class="hidden px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>
             <span data-i18n="browse_meta">Metadata</span>
@@ -325,6 +330,27 @@
         <div class="flex items-center gap-2">
           <button data-action="clearBrowseSelection" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors" data-i18n="browse_select_clear">Clear</button>
           <button id="browse-merge-btn" data-action="openBrowseMerge" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_merge">Merge</button>
+        </div>
+      </div>
+
+      <!-- New-folder panel: one empty directory inside the current folder.
+           No preview — there is nothing to plan — just a name and an explicit
+           create, like every other write in this tab. -->
+      <div id="browse-mkdir-panel" class="hidden mb-4 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white" data-i18n="browse_mkdir_title">New folder</h3>
+          <button data-action="closeBrowseMkdir" class="text-slate-400 hover:text-white text-sm" data-i18n="browse_rename_close">Close</button>
+        </div>
+        <div class="px-4 py-3">
+          <label class="block">
+            <span class="block text-xs text-slate-400 mb-1" data-i18n="browse_mkdir_name">Folder name</span>
+            <input id="browse-mkdir-name" type="text" maxlength="120" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500" data-i18n-placeholder="browse_mkdir_placeholder">
+          </label>
+          <p class="mt-1 text-xs text-slate-500" data-i18n="browse_mkdir_hint">Created inside the current folder. Invalid characters are removed.</p>
+        </div>
+        <div id="browse-mkdir-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-t border-red-600/30"></div>
+        <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-800">
+          <button id="browse-mkdir-apply" data-action="applyBrowseMkdir" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_mkdir_create">Create</button>
         </div>
       </div>
 
@@ -503,7 +529,10 @@
 
         <div id="browse-file-error" class="hidden px-4 py-2.5 text-sm text-red-200 bg-red-900/30 border-t border-red-600/30"></div>
 
+        <!-- Offered only for CBR files: repacks the RAR as CBZ in place, so the
+             panel above becomes editable. Hidden for every other format. -->
         <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-800">
+          <button id="browse-file-convert" data-action="convertBrowseFile" class="hidden px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_file_convert">Convert to CBZ</button>
           <button id="browse-file-save" data-action="applyBrowseFileMeta" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="browse_meta_save">Save</button>
         </div>
       </div>

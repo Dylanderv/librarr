@@ -508,6 +508,7 @@ async function openBrowseFileMeta(path) {
   document.getElementById('browse-file-title').textContent =
     t('browse_meta_file_title', { name: browseBaseName(path) });
   panel.classList.remove('hidden');
+  document.getElementById('browse-file-convert').classList.add('hidden');
   hideBrowseFileMetaError();
 
   // Metadata is read here and nowhere else (decision 9): opening one archive on
@@ -557,6 +558,10 @@ function lockBrowseFileMeta(reason) {
   }
   banner.textContent = t('browse_meta_status_unsupported') + ' — ' + t(`browse_meta_reason_${reason}`);
   banner.classList.remove('hidden');
+  // A CBR is the one locked format with a way out: repack it as CBZ and the
+  // panel above becomes editable. Every other format stays convert-less.
+  document.getElementById('browse-file-convert').classList
+    .toggle('hidden', reason !== 'cbr_rar_archive');
 }
 
 function closeBrowseFileMeta() {
@@ -603,6 +608,38 @@ async function applyBrowseFileMeta() {
   }
   showToast(t('browse_meta_done', { count: data.written || 0 }), failed ? 'error' : 'success');
   await openBrowsePath(state.browsePath);
+}
+
+// convertBrowseFile repacks the open CBR as CBZ in place (unpack the RAR,
+// repack it as ZIP — automated), then lands back in this panel, now editable.
+// The source is removed server-side only once the replacement is on disk.
+async function convertBrowseFile() {
+  if (!state.metaFilePath) return;
+  const btn = document.getElementById('browse-file-convert');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_file_converting');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/convert', { path: state.metaFilePath });
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseFileMetaError(err.message || t('browse_convert_failed'));
+    return;
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+
+  const skipped = (data && data.skipped) || [];
+  showToast(skipped.length
+    ? t('browse_convert_done_skipped', { count: data.files || 0, name: (data && data.name) || '', skipped: skipped.length })
+    : t('browse_convert_done', { count: data.files || 0, name: (data && data.name) || '' }), 'success');
+  // The listing must refresh first (it clears this panel), then the new file
+  // reopens here — editable this time.
+  await openBrowsePath(state.browsePath);
+  await openBrowseFileMeta((data && data.path) || state.metaFilePath);
 }
 
 function showBrowseFileMetaError(message) {

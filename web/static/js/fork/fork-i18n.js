@@ -144,6 +144,23 @@ Object.assign(I18N.en, {
     browse_rename_file_cancel: 'Cancel',
     browse_rename_file_done: 'File renamed',
     browse_rename_file_failed: 'Failed to rename this file',
+    // CBR conversion (locked file panel only)
+    browse_file_convert: 'Convert to CBZ',
+    browse_file_converting: 'Converting…',
+    browse_convert_done: 'Converted {count} file(s) to {name}',
+    browse_convert_done_skipped: 'Converted {count} file(s) to {name} ({skipped} item(s) left out)',
+    browse_convert_failed: 'Failed to convert this file',
+    // Browse — new folder
+    browse_mkdir: 'New folder',
+    browse_mkdir_title: 'New folder',
+    browse_mkdir_name: 'Folder name',
+    browse_mkdir_placeholder: 'e.g. My New Series',
+    browse_mkdir_hint: 'Created inside the current folder. Invalid characters are removed.',
+    browse_mkdir_create: 'Create',
+    browse_mkdir_creating: 'Creating…',
+    browse_mkdir_name_required: 'Enter a folder name.',
+    browse_mkdir_failed: 'Failed to create the folder',
+    browse_mkdir_done: 'Folder created: {name}',
     // Browse — merging several volume folders into one series folder
     browse_select_folder: 'Select this folder',
     browse_select_clear: 'Clear',
@@ -315,6 +332,25 @@ Object.assign(I18N.ru, {
     demote_size: 'Вне лимитов размера',
     demote_no_source: 'Нет источника',
     demote_generic: 'Отфильтровано',
+
+    // Browse — new folder
+    browse_mkdir: 'Новая папка',
+    browse_mkdir_title: 'Новая папка',
+    browse_mkdir_name: 'Имя папки',
+    browse_mkdir_placeholder: 'напр. Новая серия',
+    browse_mkdir_hint: 'Создаётся в текущей папке. Недопустимые символы удаляются.',
+    browse_mkdir_create: 'Создать',
+    browse_mkdir_creating: 'Создание…',
+    browse_mkdir_name_required: 'Введите имя папки.',
+    browse_mkdir_failed: 'Не удалось создать папку',
+    browse_mkdir_done: 'Папка создана: {name}',
+
+    // CBR conversion (locked file panel only)
+    browse_file_convert: 'Конвертировать в CBZ',
+    browse_file_converting: 'Конвертация…',
+    browse_convert_done: 'Конвертировано {count} файл(ов) в {name}',
+    browse_convert_done_skipped: 'Конвертировано {count} файл(ов) в {name} (пропущено: {skipped})',
+    browse_convert_failed: 'Не удалось конвертировать файл',
 });
 
 // app.js already ran applyLanguage() during init before this file loaded;
