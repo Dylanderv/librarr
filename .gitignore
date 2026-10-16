@@ -1,5 +1,9 @@
 # Fork-only ignores (kept at the top so tail additions from upstream merge cleanly)
 .venv
+telegram-downloader/.venv/
+telegram-downloader/local-data/
+*.session
+*.session-journal
 
 # macOS
 .DS_Store
@@ -28,3 +32,4 @@ e2e/.venv
 
 # Local verification output and dependency caches
 .verify-artifacts/
+*.egg-info/

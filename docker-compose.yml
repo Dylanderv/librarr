@@ -26,5 +26,26 @@ services:
       # Set to true only when a trusted reverse proxy injects Authentik headers.
       - OIDC_PROXY_HEADERS_ENABLED=false
 
+  telegram-downloader:
+    build: ./telegram-downloader
+    container_name: telegram-downloader
+    restart: unless-stopped
+    ports:
+      - "5051:5051"
+    volumes:
+      - telegram-data:/data/telegram
+      - /data/media/books/ebooks:/books/ebooks
+      - /data/media/books/audiobooks:/books/audiobooks
+      - /data/media/books/manga:/books/manga
+    env_file:
+      - .env
+    environment:
+      - TELEGRAM_SESSION_PATH=/data/telegram/session
+      - TELEGRAM_DB_PATH=/data/telegram/queue.db
+      - EBOOK_DIR=/books/ebooks
+      - AUDIOBOOK_DIR=/books/audiobooks
+      - MANGA_DIR=/books/manga
+
 volumes:
   librarr-data:
+  telegram-data:
