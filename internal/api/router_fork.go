@@ -25,6 +25,7 @@ func (s *Server) registerForkRoutes() {
 	s.mux.HandleFunc("POST /api/files/rename/file", requireAdmin(s.handleFilesRenameFile))
 	s.mux.HandleFunc("POST /api/files/mkdir", requireAdmin(s.handleFilesMkdir))
 	s.mux.HandleFunc("POST /api/files/convert", requireAdmin(s.handleFilesConvert))
+	s.mux.HandleFunc("GET /api/files/convert/jobs/{id}", requireAdmin(s.handleFilesConvertJob))
 	s.mux.HandleFunc("POST /api/files/move", requireAdmin(s.handleFilesMove))
 	s.mux.HandleFunc("POST /api/files/merge/preview", requireAdmin(s.handleFilesMergePreview))
 	s.mux.HandleFunc("POST /api/files/merge/apply", requireAdmin(s.handleFilesMergeApply))

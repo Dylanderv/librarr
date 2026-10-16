@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Minimal RAR 4 builder, self-contained so this package does not depend on
@@ -70,6 +71,75 @@ func doConvert(t *testing.T, s *Server, body any) *httptest.ResponseRecorder {
 	return postJSON(t, s.handleFilesConvert, "/api/files/convert", body)
 }
 
+type convertJobResponse struct {
+	ID       string          `json:"id"`
+	Batch    bool            `json:"batch"`
+	Status   string          `json:"status"`
+	Total    int             `json:"total"`
+	Finished int             `json:"finished"`
+	Current  string          `json:"current"`
+	Result   json.RawMessage `json:"result"`
+	Error    string          `json:"error"`
+}
+
+// decodeConvertJob accepts the 202 answer.
+func decodeConvertJob(t *testing.T, rec *httptest.ResponseRecorder) convertJobResponse {
+	t.Helper()
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var out convertJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, rec.Body.String())
+	}
+	if out.ID == "" || out.Status != convertJobQueued {
+		t.Fatalf("unexpected job: %+v", out)
+	}
+	return out
+}
+
+// waitConvertJob polls the manager until the job terminates.
+func waitConvertJob(t *testing.T, s *Server, id string) convertJobResponse {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		job, ok := s.convertQueue().get(id)
+		if !ok {
+			t.Fatalf("job %s vanished", id)
+		}
+		if job.Status == convertJobDone || job.Status == convertJobError {
+			raw, _ := json.Marshal(job.snapshot())
+			var out convertJobResponse
+			if err := json.Unmarshal(raw, &out); err != nil {
+				t.Fatal(err)
+			}
+			return out
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job %s still %s after 30s", id, job.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// doConvertJob enqueues and waits: the async equivalent of the old sync call.
+func doConvertJob(t *testing.T, s *Server, body any) convertJobResponse {
+	t.Helper()
+	return waitConvertJob(t, s, decodeConvertJob(t, doConvert(t, s, body)).ID)
+}
+
+func decodeConvertResult(t *testing.T, job convertJobResponse) convertResponse {
+	t.Helper()
+	if job.Status != convertJobDone {
+		t.Fatalf("job status = %s, error = %s", job.Status, job.Error)
+	}
+	var out convertResponse
+	if err := json.Unmarshal(job.Result, &out); err != nil {
+		t.Fatalf("decode result: %v (body %s)", err, string(job.Result))
+	}
+	return out
+}
+
 func TestConvertCBRToCBZ(t *testing.T) {
 	s, manga := newBrowseFixture(t)
 	src := filepath.Join(manga, "Series.cbr")
@@ -78,9 +148,9 @@ func TestConvertCBRToCBZ(t *testing.T) {
 	// Prime the cache so the test proves invalidation, not just conversion.
 	decodeList(t, doList(t, s, manga))
 
-	rec := doConvert(t, s, convertRequest{Path: src})
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	out := decodeConvertResult(t, doConvertJob(t, s, convertRequest{Path: src}))
+	if out.Name != "Series.cbz" {
+		t.Fatalf("unexpected result: %+v", out)
 	}
 	if _, err := os.Stat(filepath.Join(manga, "Series.cbz")); err != nil {
 		t.Fatalf("cbz missing on disk: %v", err)
@@ -118,7 +188,6 @@ func TestConvertRejectsBadRequests(t *testing.T) {
 		{"not found", convertRequest{Path: filepath.Join(manga, "nope.cbr")}, http.StatusNotFound},
 		{"traversal", convertRequest{Path: filepath.Join(manga, "..", "etc", "x.cbr")}, http.StatusForbidden},
 		{"outside", convertRequest{Path: "/etc/passwd.cbr"}, http.StatusForbidden},
-		{"target taken", convertRequest{Path: filepath.Join(manga, "taken.cbr")}, http.StatusConflict},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,14 +198,14 @@ func TestConvertRejectsBadRequests(t *testing.T) {
 	}
 }
 
-func decodeBatchConvert(t *testing.T, rec *httptest.ResponseRecorder) batchConvertResponse {
+func decodeBatchConvert(t *testing.T, job convertJobResponse) batchConvertResponse {
 	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	if job.Status != convertJobDone {
+		t.Fatalf("job status = %s, error = %s", job.Status, job.Error)
 	}
 	var out batchConvertResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode: %v (body %s)", err, rec.Body.String())
+	if err := json.Unmarshal(job.Result, &out); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, string(job.Result))
 	}
 	return out
 }
@@ -148,7 +217,7 @@ func TestConvertBatchSuccess(t *testing.T) {
 
 	decodeList(t, doList(t, s, manga))
 
-	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+	out := decodeBatchConvert(t, doConvertJob(t, s, convertRequest{
 		Sources: []string{filepath.Join(manga, "a.cbr"), filepath.Join(manga, "b.cbr")},
 	}))
 	if len(out.Converted) != 2 || len(out.Failed) != 0 {
@@ -177,7 +246,7 @@ func TestConvertBatchReportsFailures(t *testing.T) {
 	mustWriteN(t, filepath.Join(manga, "plain.cbz"), 3)
 	mustMkdir(t, filepath.Join(manga, "somedir"))
 
-	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+	out := decodeBatchConvert(t, doConvertJob(t, s, convertRequest{
 		Sources: []string{
 			filepath.Join(manga, "ok.cbr"),
 			filepath.Join(manga, "taken.cbr"),
@@ -232,6 +301,28 @@ func TestConvertBatchRejectsBadRequests(t *testing.T) {
 
 // Minimal one-page vector PDF for handler tests (byte-level fidelity is
 // covered in internal/convert; here the handler only needs a real PDF).
+func TestConvertSingleCollisionIsAJobError(t *testing.T) {
+	s, manga := newBrowseFixture(t)
+	writeTestCBR(t, filepath.Join(manga, "taken.cbr"), "p.jpg", []byte{1})
+	mustWriteN(t, filepath.Join(manga, "taken.cbz"), 3)
+
+	job := doConvertJob(t, s, convertRequest{Path: filepath.Join(manga, "taken.cbr")})
+	if job.Status != convertJobError || job.Error == "" {
+		t.Fatalf("expected a failed job, got %+v", job)
+	}
+}
+
+func TestConvertJobNotFound(t *testing.T) {
+	s, _ := newBrowseFixture(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/files/convert/jobs/nope", nil)
+	req.SetPathValue("id", "nope")
+	rec := httptest.NewRecorder()
+	s.handleFilesConvertJob(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
 func writeTestPDF(t *testing.T, path string) {
 	t.Helper()
 	var sb strings.Builder
@@ -265,10 +356,7 @@ func TestConvertSinglePDF(t *testing.T) {
 	src := filepath.Join(manga, "doc.pdf")
 	writeTestPDF(t, src)
 
-	rec := doConvert(t, s, convertRequest{Path: src})
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
+	decodeConvertResult(t, doConvertJob(t, s, convertRequest{Path: src}))
 	if _, err := os.Stat(filepath.Join(manga, "doc.cbz")); err != nil {
 		t.Fatalf("cbz missing on disk: %v", err)
 	}
@@ -286,7 +374,7 @@ func TestConvertBatchMixedFormats(t *testing.T) {
 	writeTestPDF(t, filepath.Join(manga, "doc.pdf"))
 	mustWriteN(t, filepath.Join(manga, "notes.txt"), 3)
 
-	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+	out := decodeBatchConvert(t, doConvertJob(t, s, convertRequest{
 		Sources: []string{
 			filepath.Join(manga, "a.cbr"),
 			filepath.Join(manga, "doc.pdf"),

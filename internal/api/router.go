@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
@@ -50,6 +51,9 @@ type Server struct {
 	seriesDetector *scheduler.SeriesDetector
 	authorMonitor  *scheduler.AuthorMonitor
 	prowlarrCaps   *search.ProwlarrCapsCache
+	// convertJobs owns the async CBR/PDF conversion queue, lazily started.
+	convertJobsMu sync.Mutex
+	convertJobs   *convertJobManager
 }
 
 // NewServer creates the HTTP API server.

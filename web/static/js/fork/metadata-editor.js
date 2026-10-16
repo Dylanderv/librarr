@@ -620,26 +620,35 @@ async function convertBrowseFile() {
   btn.disabled = true;
   btn.textContent = t('browse_file_converting');
 
-  let data;
+  let job;
   try {
-    data = await postFiles('/api/files/convert', { path: state.metaFilePath });
+    job = await postFiles('/api/files/convert', { path: state.metaFilePath });
   } catch (err) {
     btn.textContent = label;
     btn.disabled = false;
     showBrowseFileMetaError(err.message || t('browse_convert_failed'));
     return;
   }
-  btn.textContent = label;
-  btn.disabled = false;
+  // Async like the bulk panel: the user may navigate away mid-render.
+  showToast(t('browse_convert_started'), 'success');
 
-  const skipped = (data && data.skipped) || [];
-  showToast(skipped.length
-    ? t('browse_convert_done_skipped', { count: data.files || 0, name: (data && data.name) || '', skipped: skipped.length })
-    : t('browse_convert_done', { count: data.files || 0, name: (data && data.name) || '' }), 'success');
-  // The listing must refresh first (it clears this panel), then the new file
-  // reopens here — editable this time.
-  await openBrowsePath(state.browsePath);
-  await openBrowseFileMeta((data && data.path) || state.metaFilePath);
+  pollConvertJob(job.id, {
+    onDone: async j => {
+      btn.textContent = label;
+      btn.disabled = false;
+      const data = j.result || {};
+      showToast(t('browse_convert_done', { count: data.files || 0, name: data.name || '' }), 'success');
+      // The listing must refresh first (it clears this panel), then the new
+      // file reopens here — editable this time.
+      await openBrowsePath(state.browsePath);
+      await openBrowseFileMeta(data.path || state.metaFilePath);
+    },
+    onError: (j, message) => {
+      btn.textContent = label;
+      btn.disabled = false;
+      showBrowseFileMetaError(message);
+    },
+  });
 }
 
 function showBrowseFileMetaError(message) {

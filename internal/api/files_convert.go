@@ -100,6 +100,9 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cheap checks run synchronously so malformed requests fail fast; the
+	// minutes-long conversion itself runs on the worker (see
+	// files_convert_jobs.go) and the client polls for it.
 	src, err := resolveLibraryPathForWrite(s.cfg, req.Path)
 	if err != nil {
 		writeLibraryPathError(w, err)
@@ -123,41 +126,56 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "path is not a file"})
 		return
 	}
+	if kind == "pdf" && !convert.HavePoppler() {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": convert.ErrNoPoppler.Error()})
+		return
+	}
 
-	res, err := convertByKind(kind, src, pdfOptionsFor(s.cfg))
+	cfg := s.cfg
+	job := s.convertQueue().enqueue(false, 1, func(j *convertJob) {
+		s.convertQueue().progress(j.ID, 0, filepath.Base(src))
+		res, msg := execConvertSingle(cfg, src, kind)
+		if msg != "" {
+			s.convertQueue().fail(j.ID, msg)
+			return
+		}
+		s.convertQueue().finish(j.ID, res)
+	})
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+// execConvertSingle converts one source and removes it once the replacement
+// is on disk. It runs on the convert worker; msg is empty on success.
+func execConvertSingle(cfg *config.Config, src, kind string) (convertResponse, string) {
+	var out convertResponse
+	res, err := convertByKind(kind, src, pdfOptionsFor(cfg))
 	if err != nil {
 		switch {
 		case errors.Is(err, convert.ErrExists):
-			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
-		case errors.Is(err, convert.ErrEncrypted),
-			errors.Is(err, convert.ErrUnsafe),
-			errors.Is(err, convert.ErrEmpty):
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return out, "a file already has the converted name"
 		case errors.Is(err, convert.ErrNoPoppler):
-			writeJSON(w, http.StatusNotImplemented, map[string]any{"error": err.Error()})
+			return out, convert.ErrNoPoppler.Error()
 		default:
-			writeError(w, http.StatusInternalServerError, "failed to convert archive", err)
+			return out, err.Error()
 		}
-		return
 	}
 
 	// The CBZ is complete and verified on disk; only then does the source go,
 	// with a plain remove — it is a file, never a directory.
 	dir := filepath.Dir(src)
 	if err := os.Remove(src); err != nil {
-		writeError(w, http.StatusInternalServerError, "converted but failed to remove the source", err)
-		return
+		return out, "converted but failed to remove the source"
 	}
 	invalidateDirListing(dir)
 
-	slog.Info("cbr converted to cbz", "from", src, "to", res.Path, "files", res.Files)
+	slog.Info("file converted", "from", src, "to", res.Path, "files", res.Files)
 
-	writeJSON(w, http.StatusCreated, convertResponse{
+	return convertResponse{
 		Name:    filepath.Base(res.Path),
 		Path:    res.Path,
 		Files:   res.Files,
 		Skipped: res.Skipped,
-	})
+	}, ""
 }
 
 // handleFilesConvertBatch converts every source and reports per file instead
@@ -192,10 +210,23 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 		}
 	}
 
+	cfg := s.cfg
+	job := s.convertQueue().enqueue(true, len(srcs), func(j *convertJob) {
+		s.runConvertBatch(j, cfg, srcs)
+	})
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+// runConvertBatch converts every source and reports per file. A stat failure
+// mid-batch (vanishing NFS handle) fails the job outright — partial results
+// reported so far are kept in the response for the poller.
+func (s *Server) runConvertBatch(j *convertJob, cfg *config.Config, srcs []string) {
+	mgr := s.convertQueue()
 	out := batchConvertResponse{Converted: []batchConvertedFile{}}
 	touched := map[string]bool{}
-	for _, src := range srcs {
+	for i, src := range srcs {
 		base := filepath.Base(src)
+		mgr.progress(j.ID, i, base)
 		fail := func(reason, detail string) {
 			out.Failed = append(out.Failed, batchFailedFile{Name: base, Reason: reason, Detail: detail})
 		}
@@ -205,7 +236,7 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 				fail(convertFailMissing, "")
 				continue
 			}
-			writeError(w, http.StatusInternalServerError, "failed to stat file", err)
+			mgr.fail(j.ID, "failed to stat file")
 			return
 		}
 		if info.IsDir() {
@@ -217,7 +248,7 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 			fail(convertFailNotSupported, "")
 			continue
 		}
-		res, err := convertByKind(kind, src, pdfOptionsFor(s.cfg))
+		res, err := convertByKind(kind, src, pdfOptionsFor(cfg))
 		if err != nil {
 			switch {
 			case errors.Is(err, convert.ErrExists):
@@ -249,9 +280,21 @@ func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertReque
 		invalidateDirListing(d)
 	}
 
-	slog.Info("cbr batch converted", "converted", len(out.Converted), "failed", len(out.Failed))
+	slog.Info("batch converted", "converted", len(out.Converted), "failed", len(out.Failed))
 
-	writeJSON(w, http.StatusOK, out)
+	mgr.finish(j.ID, out)
+}
+
+// handleFilesConvertJob reports one conversion job for the poller.
+//
+// GET /api/files/convert/jobs/{id}
+func (s *Server) handleFilesConvertJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := s.convertQueue().get(r.PathValue("id"))
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "unknown conversion job"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
 }
 
 // convertibleKind reports whether src is convertible and which pipeline it
@@ -282,4 +325,15 @@ func pdfOptionsFor(cfg *config.Config) convert.PDFOptions {
 		return convert.PDFOptions{}
 	}
 	return convert.PDFOptions{DPI: cfg.PDFDPI, JPEGQuality: cfg.PDFJPEGQuality}
+}
+
+// convertQueue lazily owns the conversion job manager. Servers built by hand
+// in tests get one on first use, same as servers from NewServer.
+func (s *Server) convertQueue() *convertJobManager {
+	s.convertJobsMu.Lock()
+	defer s.convertJobsMu.Unlock()
+	if s.convertJobs == nil {
+		s.convertJobs = newConvertJobManager(s.cfg)
+	}
+	return s.convertJobs
 }

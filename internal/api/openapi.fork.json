@@ -1418,7 +1418,7 @@
     "/api/files/convert": {
       "post": {
         "summary": "Repack .cbr or render .pdf as .cbz in place, one or many (admin)",
-        "description": "CBR is repacked with a pure-Go RAR reader; PDF pages are rasterized with poppler pdftoppm (PDF_DPI/PDF_JPEG_QUALITY, defaults 200/90) and the text layer is dropped. Creates Name.cbz next to each source, then removes the source. Reports per file in batch shape.",
+        "description": "CBR is repacked with a pure-Go RAR reader; PDF pages are rasterized with poppler pdftoppm (PDF_DPI/PDF_JPEG_QUALITY, defaults 200/90) and the text layer is dropped. Async: validates then answers 202 with a job id; the single background worker converts in FIFO order and the client polls GET /api/files/convert/jobs/{id}. Closing the tab loses nothing.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1544,6 +1544,33 @@
           },
           "501": {
             "description": "PDF conversion without poppler installed"
+          },
+          "202": {
+            "description": "Accepted; poll the job until done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "batch": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "finished": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1649,6 +1676,68 @@
           },
           "503": {
             "description": "No library directory is configured"
+          }
+        }
+      }
+    },
+    "/api/files/convert/jobs/{id}": {
+      "get": {
+        "summary": "Poll one conversion job (admin)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job with progress; result embedded when done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "batch": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "done",
+                        "error"
+                      ]
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "finished": {
+                      "type": "integer"
+                    },
+                    "current": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown job (never existed, expired, or server restarted)"
           }
         }
       }

@@ -1301,26 +1301,64 @@ async function applyBrowseConvert() {
   const btn = document.getElementById('browse-convert-apply');
   const label = btn.textContent;
   btn.disabled = true;
-  btn.textContent = t('browse_convert_applying');
 
-  let data;
+  let job;
   try {
-    data = await postFiles('/api/files/convert', { sources: state.convertSources });
+    job = await postFiles('/api/files/convert', { sources: state.convertSources });
   } catch (err) {
     btn.textContent = label;
     btn.disabled = false;
     showBrowseConvertError(err.message || t('browse_convert_failed'));
     return;
   }
-  btn.textContent = label;
-  btn.disabled = false;
+  // From here the server works alone: the panel may close, the user may
+  // navigate away, the tab may even close — polling just reports back.
+  btn.textContent = t('browse_convert_running', { done: 0, total: job.total || 0 });
+  showToast(t('browse_convert_started'), 'success');
 
-  const done = data.converted ? data.converted.length : 0;
-  const failed = data.failed ? data.failed.length : 0;
-  showToast(t('browse_convert_batch_done', { count: done }), failed ? 'error' : 'success');
+  pollConvertJob(job.id, {
+    onProgress: j => {
+      btn.textContent = t('browse_convert_running', { done: j.finished || 0, total: j.total || 0 });
+    },
+    onDone: async j => {
+      btn.textContent = label;
+      btn.disabled = false;
+      const data = j.result || {};
+      const done = data.converted ? data.converted.length : 0;
+      const failed = data.failed ? data.failed.length : 0;
+      showToast(t('browse_convert_batch_done', { count: done }), failed ? 'error' : 'success');
+      await openBrowsePath(state.browsePath);
+      renderBrowseConvertReport(data);
+    },
+    onError: (j, message) => {
+      btn.textContent = label;
+      btn.disabled = false;
+      showBrowseConvertError(message);
+    },
+  });
+}
 
-  await openBrowsePath(state.browsePath);
-  renderBrowseConvertReport(data);
+// pollConvertJob polls a conversion job until it terminates. Polling survives
+// navigation and panel closes: whatever the user does meanwhile, completion
+// toasts and refreshes the listing.
+function pollConvertJob(id, callbacks) {
+  const timer = setInterval(async () => {
+    let job;
+    try {
+      job = await apiJson(`/api/files/convert/jobs/${encodeURIComponent(id)}`);
+    } catch (err) {
+      clearInterval(timer);
+      callbacks.onError(null, err.message || t('browse_convert_failed'));
+      return;
+    }
+    if (job.status === 'done' || job.status === 'error') {
+      clearInterval(timer);
+      if (job.status === 'done') callbacks.onDone(job);
+      else callbacks.onError(job, job.error || t('browse_convert_failed'));
+      return;
+    }
+    if (callbacks.onProgress) callbacks.onProgress(job);
+  }, 2000);
 }
 
 // renderBrowseConvertReport reuses the merge report area like the move report.
