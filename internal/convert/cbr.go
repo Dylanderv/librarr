@@ -42,7 +42,9 @@ var (
 // conversion, not the server.
 const (
 	// maxConvertBytes caps the total unpacked output of one conversion.
-	maxConvertBytes = 8 << 30
+	// Typed int64: an untyped 8 GiB constant overflows int on 32-bit
+	// targets (linux/arm), which broke the goreleaser cross-compile.
+	maxConvertBytes int64 = 8 << 30
 	// maxConvertEntries caps the entry count (and the CBZ central directory).
 	maxConvertEntries = 10000
 )

@@ -23,6 +23,10 @@ jobs:
           fi
       - name: go build
         run: go build -o librarr ./cmd/librarr/
+      - name: go build 32-bit (release cross-compile guard)
+        # goreleaser builds linux/arm among others: an untyped constant that
+        # overflows int32 passes 64-bit CI and fails the release otherwise.
+        run: GOOS=linux GOARCH=arm GOARM=7 go build ./...
       - name: go test (race)
         run: go test ./... -v -count=1 -race
       - name: go test fuzz (short)
