@@ -38,3 +38,10 @@ jobs:
           tags: |
             ghcr.io/${{ steps.owner.outputs.name }}/librarr:${{ steps.version.outputs.tag }}
             ghcr.io/${{ steps.owner.outputs.name }}/librarr:latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./telegram-downloader
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.name }}/telegram-downloader:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ steps.owner.outputs.name }}/telegram-downloader:latest
