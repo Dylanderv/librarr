@@ -25,9 +25,14 @@ import (
 // touched goes through invalidateDirListing, like the rename and merge
 // endpoints.
 
-// convertRequest names the .cbr file to convert.
+// convertRequest names the .cbr file(s) to convert.
+//
+// Two shapes: the legacy single {path}, answered with a convertResponse, and
+// the batch {sources}, answered with a batchConvertResponse that reports per
+// file instead of failing the whole request on one bad archive.
 type convertRequest struct {
-	Path string `json:"path"`
+	Path    string   `json:"path"`
+	Sources []string `json:"sources"`
 }
 
 // convertResponse reports the new file and what the archive held.
@@ -38,13 +43,55 @@ type convertResponse struct {
 	Skipped []string `json:"skipped,omitempty"`
 }
 
-// handleFilesConvert repacks one .cbr as .cbz and removes the source.
+// batchConvertedFile is one archive that became a .cbz.
+type batchConvertedFile struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Files int    `json:"files"`
+}
+
+// batchFailedFile is one source left unconverted, with a reason key the front
+// end translates (exists | missing | not_file | not_cbr | encrypted | empty |
+// unsafe | failed | remove_failed) and an optional detail.
+type batchFailedFile struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// batchConvertResponse reports a batch conversion.
+type batchConvertResponse struct {
+	Converted []batchConvertedFile `json:"converted"`
+	Failed    []batchFailedFile    `json:"failed,omitempty"`
+}
+
+// Reasons a source is left unconverted.
+const (
+	convertFailExists    = "exists"
+	convertFailMissing   = "missing"
+	convertFailNotFile   = "not_file"
+	convertFailNotCBR    = "not_cbr"
+	convertFailEncrypted = "encrypted"
+	convertFailEmpty     = "empty"
+	convertFailUnsafe    = "unsafe"
+	convertFailConvert   = "failed"
+	convertFailRemove    = "remove_failed"
+)
+
+// maxConvertSources bounds one batch request, like maxMoveSources bounds a move.
+const maxConvertSources = 100
+
+// handleFilesConvert repacks .cbr files as .cbz and removes the sources.
 //
 // POST /api/files/convert
 func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 	var req convertRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+		return
+	}
+	if len(req.Sources) > 0 {
+		s.handleFilesConvertBatch(w, req)
 		return
 	}
 	if strings.TrimSpace(req.Path) == "" {
@@ -107,4 +154,88 @@ func (s *Server) handleFilesConvert(w http.ResponseWriter, r *http.Request) {
 		Files:   res.Files,
 		Skipped: res.Skipped,
 	})
+}
+
+// handleFilesConvertBatch converts every source and reports per file instead
+// of failing the whole request on one bad archive. A source that cannot be
+// confined aborts everything before anything converts — same fail-fast rule
+// as the batch move — while per-file problems (collision, unreadable archive)
+// are reported and the rest still converts.
+func (s *Server) handleFilesConvertBatch(w http.ResponseWriter, req convertRequest) {
+	if len(req.Sources) > maxConvertSources {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "too many files in one conversion"})
+		return
+	}
+
+	// Confinement first: resolve everything before converting anything.
+	srcs := make([]string, 0, len(req.Sources))
+	for _, raw := range req.Sources {
+		src, err := resolveLibraryPathForWrite(s.cfg, raw)
+		if err != nil {
+			writeLibraryPathError(w, err)
+			return
+		}
+		srcs = append(srcs, src)
+	}
+
+	out := batchConvertResponse{Converted: []batchConvertedFile{}}
+	touched := map[string]bool{}
+	for _, src := range srcs {
+		base := filepath.Base(src)
+		fail := func(reason, detail string) {
+			out.Failed = append(out.Failed, batchFailedFile{Name: base, Reason: reason, Detail: detail})
+		}
+		info, err := os.Stat(src)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fail(convertFailMissing, "")
+				continue
+			}
+			writeError(w, http.StatusInternalServerError, "failed to stat file", err)
+			return
+		}
+		if info.IsDir() {
+			fail(convertFailNotFile, "")
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(src), ".cbr") {
+			fail(convertFailNotCBR, "")
+			continue
+		}
+		res, err := convert.CBRToCBZ(src)
+		if err != nil {
+			switch {
+			case errors.Is(err, convert.ErrExists):
+				fail(convertFailExists, "")
+			case errors.Is(err, convert.ErrEncrypted):
+				fail(convertFailEncrypted, "")
+			case errors.Is(err, convert.ErrEmpty):
+				fail(convertFailEmpty, "")
+			case errors.Is(err, convert.ErrUnsafe):
+				fail(convertFailUnsafe, "")
+			default:
+				fail(convertFailConvert, err.Error())
+			}
+			continue
+		}
+		dir := filepath.Dir(src)
+		if err := os.Remove(src); err != nil {
+			fail(convertFailRemove, err.Error())
+			continue
+		}
+		touched[dir] = true
+		out.Converted = append(out.Converted, batchConvertedFile{
+			Name:  filepath.Base(res.Path),
+			Path:  res.Path,
+			Files: res.Files,
+		})
+	}
+	for d := range touched {
+		invalidateDirListing(d)
+	}
+
+	slog.Info("cbr batch converted", "converted", len(out.Converted), "failed", len(out.Failed))
+
+	writeJSON(w, http.StatusOK, out)
 }

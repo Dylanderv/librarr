@@ -103,6 +103,7 @@ async function openBrowsePath(path) {
   state.browseSelection = [];
   closeBrowseMerge();
   closeBrowseMove();
+  closeBrowseConvert();
   hideBrowseMergeReport();
   renderBrowseSelectBar();
   // The file panel is anchored to one file, which the new listing no longer shows.
@@ -173,6 +174,7 @@ function clearBrowseListing() {
   state.browseSelection = [];
   closeBrowseMerge();
   closeBrowseMove();
+  closeBrowseConvert();
   hideBrowseMergeReport();
   renderBrowseSelectBar();
   document.getElementById('browse-rename-btn').classList.add('hidden');
@@ -251,13 +253,13 @@ function browseRow(entry, targetPath, isParent) {
 
   // Folders and files are tickable: folders feed the merge panel, files the
   // move panel. The bar and its buttons sort out which applies.
-  return browseSelectableRow(row, targetPath, entry.is_dir);
+  return browseSelectableRow(row, targetPath, entry.is_dir, entry.kind || '');
 }
 
 // browseSelectableRow puts the tick-box beside a listing row rather than
 // inside it: a folder row is a <button> that opens the folder, and a checkbox
 // nested in a button would toggle on every navigation click.
-function browseSelectableRow(row, path, isDir) {
+function browseSelectableRow(row, path, isDir, kind) {
   const wrap = document.createElement('div');
   wrap.className = 'flex items-center gap-2 pl-4';
 
@@ -267,6 +269,7 @@ function browseSelectableRow(row, path, isDir) {
   cb.dataset.actionChange = 'browseSelect';
   cb.dataset.path = path;
   cb.dataset.isdir = isDir ? '1' : '0';
+  cb.dataset.kind = kind || '';
   cb.checked = state.browseSelection.includes(path);
   const hint = isDir ? t('browse_select_folder') : t('browse_select_file');
   cb.title = hint;
@@ -737,6 +740,17 @@ function browseSelected() {
   return { folders, files };
 }
 
+// browseSelectedFiles lists the ticked files with their format kind, so the
+// move and convert panels know what they were opened on.
+function browseSelectedFiles() {
+  const out = [];
+  document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]:checked')
+    .forEach(cb => {
+      if (cb.dataset.isdir !== '1') out.push({ path: cb.dataset.path, kind: cb.dataset.kind || 'other' });
+    });
+  return out;
+}
+
 function renderBrowseSelectBar() {
   const n = state.browseSelection.length;
   // The bar shows from the first tick so Clear is always reachable, but merging
@@ -750,6 +764,10 @@ function renderBrowseSelectBar() {
   document.getElementById('browse-merge-btn').disabled = folders.length < 2;
   // Moving needs at least one file; folders never move (they merge).
   document.getElementById('browse-move-btn').classList.toggle('hidden', files.length === 0);
+  // Converting needs at least one ticked CBR — the per-file button stays for
+  // the one-at-a-time case.
+  const cbrs = browseSelectedFiles().filter(f => f.kind === 'cbr');
+  document.getElementById('browse-convert-btn').classList.toggle('hidden', cbrs.length === 0);
 }
 
 function browseSelect(el) {
@@ -760,6 +778,7 @@ function browseSelect(el) {
   // An open preview was computed for the previous selection.
   if (state.mergeSources.length) closeBrowseMerge();
   if (state.moveSources.length) closeBrowseMove();
+  if (state.convertSources.length) closeBrowseConvert();
   renderBrowseSelectBar();
 }
 
@@ -767,6 +786,7 @@ function clearBrowseSelection() {
   state.browseSelection = [];
   closeBrowseMerge();
   closeBrowseMove();
+  closeBrowseConvert();
   document.querySelectorAll('#browse-list input[data-action-change="browseSelect"]')
     .forEach(cb => { cb.checked = false; });
   renderBrowseSelectBar();
@@ -1181,6 +1201,140 @@ function renderBrowseMoveReport(data) {
   lines.push({ text: t('browse_move_done', { count: data.moved ? data.moved.length : 0, name: browseBaseName(data.path) }), tone: 'text-slate-200' });
   (data.skipped || []).forEach(sk => {
     lines.push({ text: `${sk.name} — ${t(`browse_move_status_${sk.reason}`)}`, tone: 'text-amber-300/90' });
+  });
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'text-xs break-all ' + line.tone;
+    div.textContent = line.text;
+    el.appendChild(div);
+  });
+  el.classList.remove('hidden');
+}
+
+// ============================================================
+// BROWSE — CONVERT (several CBRs to CBZ at once)
+// ============================================================
+// Same shape as the move panel: ticked CBRs, a preview of what each becomes,
+// then one batch request the server reports per file. The preview needs no
+// server round-trip — every target lands next to its source, so the current
+// listing (already on screen) says which names are taken.
+function openBrowseConvert() {
+  const files = browseSelectedFiles().filter(f => f.kind === 'cbr');
+  if (!files.length) return;
+  state.convertSources = files.map(f => f.path);
+  hideBrowseMergeReport();
+  hideBrowseConvertError();
+
+  const present = new Set();
+  document.querySelectorAll('#browse-list [data-file-name]')
+    .forEach(el => { if (el.dataset.fileName) present.add(el.dataset.fileName); });
+
+  const body = document.getElementById('browse-convert-rows');
+  body.innerHTML = '';
+  let ready = 0;
+  files.forEach(f => {
+    const target = browseConvertTarget(f.path);
+    const taken = present.has(target);
+    if (!taken) ready++;
+    body.appendChild(browseConvertRow(f.path, target, taken));
+  });
+  document.getElementById('browse-convert-summary').textContent = ready === 0
+    ? t('browse_convert_nothing')
+    : t('browse_convert_summary', { count: ready });
+  document.getElementById('browse-convert-apply').disabled = ready === 0;
+  document.getElementById('browse-convert-panel').classList.remove('hidden');
+}
+
+// browseConvertTarget mirrors the server's naming: same stem, .cbz extension.
+function browseConvertTarget(path) {
+  return browseBaseName(path).replace(/\.[^.]*$/, '') + '.cbz';
+}
+
+function closeBrowseConvert() {
+  state.convertSources = [];
+  const panel = document.getElementById('browse-convert-panel');
+  if (panel) panel.classList.add('hidden');
+  hideBrowseConvertError();
+}
+
+function hideBrowseConvertError() {
+  const el = document.getElementById('browse-convert-error');
+  if (el) el.classList.add('hidden');
+}
+
+function showBrowseConvertError(message) {
+  const el = document.getElementById('browse-convert-error');
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function browseConvertRow(path, target, taken) {
+  const tr = document.createElement('tr');
+  const from = document.createElement('td');
+  from.className = 'px-4 py-2 align-middle';
+  const nameEl = document.createElement('div');
+  nameEl.className = 'text-slate-300 break-all';
+  nameEl.textContent = browseBaseName(path);
+  from.appendChild(nameEl);
+  tr.appendChild(from);
+  const to = document.createElement('td');
+  to.className = 'px-4 py-2 align-middle';
+  const dest = document.createElement('div');
+  dest.className = taken ? 'text-slate-500 break-all line-through' : 'text-emerald-300 break-all';
+  dest.textContent = target;
+  to.appendChild(dest);
+  if (taken) {
+    const why = document.createElement('div');
+    why.className = 'text-xs text-amber-300/90';
+    why.textContent = t('browse_convert_status_exists');
+    to.appendChild(why);
+  }
+  tr.appendChild(to);
+  return tr;
+}
+
+async function applyBrowseConvert() {
+  if (!state.convertSources.length) return;
+  const btn = document.getElementById('browse-convert-apply');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('browse_convert_applying');
+
+  let data;
+  try {
+    data = await postFiles('/api/files/convert', { sources: state.convertSources });
+  } catch (err) {
+    btn.textContent = label;
+    btn.disabled = false;
+    showBrowseConvertError(err.message || t('browse_convert_failed'));
+    return;
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+
+  const done = data.converted ? data.converted.length : 0;
+  const failed = data.failed ? data.failed.length : 0;
+  showToast(t('browse_convert_batch_done', { count: done }), failed ? 'error' : 'success');
+
+  await openBrowsePath(state.browsePath);
+  renderBrowseConvertReport(data);
+}
+
+// renderBrowseConvertReport reuses the merge report area like the move report.
+function renderBrowseConvertReport(data) {
+  const el = document.getElementById('browse-merge-report');
+  el.innerHTML = '';
+  const lines = [];
+  lines.push({ text: t('browse_convert_batch_done', { count: data.converted ? data.converted.length : 0 }), tone: 'text-slate-200' });
+  (data.converted || []).forEach(c => {
+    lines.push({ text: `${c.name} — ${t('browse_convert_report_converted', { count: c.files })}`, tone: 'text-slate-400 pl-3' });
+  });
+  (data.failed || []).forEach(f => {
+    const reason = t(`browse_convert_status_${f.reason}`);
+    lines.push({
+      text: f.detail ? `${f.name} — ${reason}: ${f.detail}` : `${f.name} — ${reason}`,
+      tone: 'text-amber-300/90',
+    });
   });
   lines.forEach(line => {
     const div = document.createElement('div');
