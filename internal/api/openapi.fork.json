@@ -1417,8 +1417,8 @@
     },
     "/api/files/convert": {
       "post": {
-        "summary": "Repack .cbr files as .cbz in place, one or many (admin)",
-        "description": "Automates the manual unpack-RAR/repack-ZIP workaround with a pure-Go RAR reader: creates Name.cbz next to the source with identical contents, then removes the .cbr. Directories, links and encrypted entries are refused or reported, never guessed at.",
+        "summary": "Repack .cbr or render .pdf as .cbz in place, one or many (admin)",
+        "description": "CBR is repacked with a pure-Go RAR reader; PDF pages are rasterized with poppler pdftoppm (PDF_DPI/PDF_JPEG_QUALITY, defaults 200/90) and the text layer is dropped. Creates Name.cbz next to each source, then removes the source. Reports per file in batch shape.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1428,14 +1428,14 @@
                 "properties": {
                   "path": {
                     "type": "string",
-                    "description": "Absolute path of the .cbr file (single shape)"
+                    "description": "Absolute path of the .cbr/.pdf file (single shape)"
                   },
                   "sources": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     },
-                    "description": "Absolute paths of the .cbr files (batch shape, max 100)"
+                    "description": "Absolute paths (batch shape, max 100)"
                   }
                 }
               }
@@ -1471,7 +1471,7 @@
             }
           },
           "400": {
-            "description": "Not a .cbr file, encrypted, unsafe entry, or empty archive"
+            "description": "Not a convertible file, encrypted, empty, unsafe, or too many pages"
           },
           "403": {
             "description": "Path outside the libraries"
@@ -1480,7 +1480,7 @@
             "description": "File not found"
           },
           "409": {
-            "description": "A file already has the converted name"
+            "description": "Single shape: a file already has the converted name"
           },
           "503": {
             "description": "No library directory is configured"
@@ -1541,6 +1541,9 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "PDF conversion without poppler installed"
           }
         }
       }

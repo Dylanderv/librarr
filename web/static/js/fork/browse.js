@@ -764,10 +764,10 @@ function renderBrowseSelectBar() {
   document.getElementById('browse-merge-btn').disabled = folders.length < 2;
   // Moving needs at least one file; folders never move (they merge).
   document.getElementById('browse-move-btn').classList.toggle('hidden', files.length === 0);
-  // Converting needs at least one ticked CBR — the per-file button stays for
-  // the one-at-a-time case.
-  const cbrs = browseSelectedFiles().filter(f => f.kind === 'cbr');
-  document.getElementById('browse-convert-btn').classList.toggle('hidden', cbrs.length === 0);
+  // Converting needs at least one ticked CBR or PDF — the per-file button
+  // stays for the one-at-a-time case.
+  const convertibles = browseSelectedFiles().filter(f => f.kind === 'cbr' || f.kind === 'pdf');
+  document.getElementById('browse-convert-btn').classList.toggle('hidden', convertibles.length === 0);
 }
 
 function browseSelect(el) {
@@ -1219,11 +1219,14 @@ function renderBrowseMoveReport(data) {
 // server round-trip — every target lands next to its source, so the current
 // listing (already on screen) says which names are taken.
 function openBrowseConvert() {
-  const files = browseSelectedFiles().filter(f => f.kind === 'cbr');
+  const files = browseSelectedFiles().filter(f => f.kind === 'cbr' || f.kind === 'pdf');
   if (!files.length) return;
   state.convertSources = files.map(f => f.path);
   hideBrowseMergeReport();
   hideBrowseConvertError();
+  // Rasterization drops the PDF text layer: say so before the user applies.
+  document.getElementById('browse-convert-hint').classList
+    .toggle('hidden', !files.some(f => f.kind === 'pdf'));
 
   const present = new Set();
   document.querySelectorAll('#browse-list [data-file-name]')

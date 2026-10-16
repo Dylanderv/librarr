@@ -3,11 +3,14 @@ package api
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,7 +113,7 @@ func TestConvertRejectsBadRequests(t *testing.T) {
 		want int
 	}{
 		{"missing path", convertRequest{}, http.StatusBadRequest},
-		{"not a cbr", convertRequest{Path: filepath.Join(manga, "a.cbz")}, http.StatusBadRequest},
+		{"not convertible", convertRequest{Path: filepath.Join(manga, "a.cbz")}, http.StatusBadRequest},
 		{"directory", convertRequest{Path: filepath.Join(manga, "dir")}, http.StatusBadRequest},
 		{"not found", convertRequest{Path: filepath.Join(manga, "nope.cbr")}, http.StatusNotFound},
 		{"traversal", convertRequest{Path: filepath.Join(manga, "..", "etc", "x.cbr")}, http.StatusForbidden},
@@ -192,7 +195,7 @@ func TestConvertBatchReportsFailures(t *testing.T) {
 	}
 	if failed["taken.cbr"] != convertFailExists ||
 		failed["gone.cbr"] != convertFailMissing ||
-		failed["plain.cbz"] != convertFailNotCBR ||
+		failed["plain.cbz"] != convertFailNotSupported ||
 		failed["somedir"] != convertFailNotFile {
 		t.Errorf("failed = %+v", out.Failed)
 	}
@@ -224,5 +227,77 @@ func TestConvertBatchRejectsBadRequests(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(manga, "a.cbz")); !os.IsNotExist(err) {
 		t.Error("aborted batch must leave no output")
+	}
+}
+
+// Minimal one-page vector PDF for handler tests (byte-level fidelity is
+// covered in internal/convert; here the handler only needs a real PDF).
+func writeTestPDF(t *testing.T, path string) {
+	t.Helper()
+	var sb strings.Builder
+	sb.WriteString("%PDF-1.4\n")
+	offsets := []int{}
+	addObj := func(num int, body string) {
+		offsets = append(offsets, sb.Len())
+		fmt.Fprintf(&sb, "%d 0 obj\n%s\nendobj\n", num, body)
+	}
+	stream := "0.1 0.2 0.8 rg\n20 20 160 160 re f\n"
+	addObj(1, "<< /Type /Catalog /Pages 2 0 R >>")
+	addObj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+	addObj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << >> >>")
+	addObj(4, fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(stream), stream))
+	xrefPos := sb.Len()
+	fmt.Fprintf(&sb, "xref\n0 5\n0000000000 65535 f \n")
+	for _, off := range offsets {
+		fmt.Fprintf(&sb, "%010d 00000 n \n", off)
+	}
+	fmt.Fprintf(&sb, "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefPos)
+	if err := os.WriteFile(path, []byte(sb.String()), 0o666); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConvertSinglePDF(t *testing.T) {
+	if _, err := exec.LookPath("pdfinfo"); err != nil {
+		t.Skip("poppler not installed")
+	}
+	s, manga := newBrowseFixture(t)
+	src := filepath.Join(manga, "doc.pdf")
+	writeTestPDF(t, src)
+
+	rec := doConvert(t, s, convertRequest{Path: src})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(manga, "doc.cbz")); err != nil {
+		t.Fatalf("cbz missing on disk: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Error("source .pdf must be gone after conversion")
+	}
+}
+
+func TestConvertBatchMixedFormats(t *testing.T) {
+	if _, err := exec.LookPath("pdfinfo"); err != nil {
+		t.Skip("poppler not installed")
+	}
+	s, manga := newBrowseFixture(t)
+	writeTestCBR(t, filepath.Join(manga, "a.cbr"), "p.jpg", []byte{1})
+	writeTestPDF(t, filepath.Join(manga, "doc.pdf"))
+	mustWriteN(t, filepath.Join(manga, "notes.txt"), 3)
+
+	out := decodeBatchConvert(t, doConvert(t, s, convertRequest{
+		Sources: []string{
+			filepath.Join(manga, "a.cbr"),
+			filepath.Join(manga, "doc.pdf"),
+			filepath.Join(manga, "notes.txt"),
+		},
+	}))
+	if len(out.Converted) != 2 {
+		t.Fatalf("converted = %+v, want 2", out.Converted)
+	}
+	if len(out.Failed) != 1 || out.Failed[0].Name != "notes.txt" ||
+		out.Failed[0].Reason != convertFailNotSupported {
+		t.Errorf("failed = %+v", out.Failed)
 	}
 }

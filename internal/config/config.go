@@ -56,6 +56,10 @@ type Config struct {
 	IncomingDir      string
 	MangaIncomingDir string
 
+	// PDF to CBZ rendering (pdftoppm). Zero values mean "use the defaults".
+	PDFDPI         int
+	PDFJPEGQuality int
+
 	// Torznab
 	TorznabAPIKey string
 
@@ -314,6 +318,9 @@ func buildFromEnv() *Config {
 		MangaDir:         getEnv("MANGA_DIR", "/books/manga"),
 		IncomingDir:      getEnv("INCOMING_DIR", "/data/incoming"),
 		MangaIncomingDir: getEnv("MANGA_INCOMING_DIR", "/data/manga-incoming"),
+
+		PDFDPI:         getEnvInt("PDF_DPI", 200),
+		PDFJPEGQuality: getEnvInt("PDF_JPEG_QUALITY", 90),
 
 		TorznabAPIKey: getEnv("TORZNAB_API_KEY", ""),
 

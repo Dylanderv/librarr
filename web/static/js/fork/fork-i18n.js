@@ -162,7 +162,8 @@ Object.assign(I18N.en, {
     browse_convert_status_exists: 'A file already has the converted name',
     browse_convert_status_missing: 'File not found — it was moved or deleted',
     browse_convert_status_not_file: 'Only files can be converted',
-    browse_convert_status_not_cbr: 'Not a CBR file',
+    browse_convert_status_not_supported: 'Only CBR and PDF files can be converted',
+    browse_convert_pdf_hint: 'PDF pages become images: the text layer is dropped.',
     browse_convert_status_encrypted: 'Archive is encrypted',
     browse_convert_status_empty: 'Archive holds no files',
     browse_convert_status_unsafe: 'Archive holds an unsafe entry',
@@ -285,7 +286,7 @@ Object.assign(I18N.en, {
     browse_meta_status_error: 'Could not be read',
     // Why a format cannot hold metadata — one message per format, because the
     // answer to each is different.
-    browse_meta_reason_pdf_ignored_by_kavita: 'Kavita ignores PDF metadata: only the folder and file names matter, so rename instead.',
+    browse_meta_reason_pdf_ignored_by_kavita: 'Kavita ignores PDF metadata: only the folder and file names matter. Rename, or convert to CBZ to edit it.',
     browse_meta_reason_cbr_rar_archive: 'A CBR is a RAR archive, which librarr cannot rewrite. Convert it to CBZ to make it editable.',
     browse_meta_reason_audio_unsupported: 'Audiobook tags are outside what librarr writes; only renaming is available.',
     browse_meta_reason_format_unsupported: 'This format holds no metadata librarr can write.',
@@ -409,7 +410,8 @@ Object.assign(I18N.ru, {
     browse_convert_status_exists: 'Файл с таким именем уже существует',
     browse_convert_status_missing: 'Файл не найден — его переместили или удалили',
     browse_convert_status_not_file: 'Можно конвертировать только файлы',
-    browse_convert_status_not_cbr: 'Не CBR файл',
+    browse_convert_status_not_supported: 'Можно конвертировать только CBR и PDF',
+    browse_convert_pdf_hint: 'Страницы PDF станут картинками: текстовый слой будет удалён.',
     browse_convert_status_encrypted: 'Архив зашифрован',
     browse_convert_status_empty: 'Архив не содержит файлов',
     browse_convert_status_unsafe: 'Архив содержит опасную запись',
