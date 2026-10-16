@@ -60,6 +60,10 @@ type Config struct {
 	PDFDPI         int
 	PDFJPEGQuality int
 
+	// Telegram sidecar (telegram-downloader): active downloads shown in Browse.
+	TelegramSidecarURL    string
+	TelegramSidecarAPIKey string
+
 	// Torznab
 	TorznabAPIKey string
 
@@ -318,6 +322,9 @@ func buildFromEnv() *Config {
 		MangaDir:         getEnv("MANGA_DIR", "/books/manga"),
 		IncomingDir:      getEnv("INCOMING_DIR", "/data/incoming"),
 		MangaIncomingDir: getEnv("MANGA_INCOMING_DIR", "/data/manga-incoming"),
+
+		TelegramSidecarURL:    getEnv("TELEGRAM_SIDECAR_URL", "http://telegram-downloader:5051"),
+		TelegramSidecarAPIKey: getEnv("TELEGRAM_SIDECAR_API_KEY", ""),
 
 		PDFDPI:         getEnvInt("PDF_DPI", 200),
 		PDFJPEGQuality: getEnvInt("PDF_JPEG_QUALITY", 90),

@@ -147,6 +147,8 @@ Object.assign(I18N.en, {
     // CBR conversion (locked file panel only)
     browse_file_convert: 'Convert to CBZ',
     browse_file_converting: 'Converting…',
+    // In-flight telegram downloads (Browse badges)
+    browse_dl_queued: 'Queued',
     browse_convert_done: 'Converted {count} file(s) to {name}',
     browse_convert_done_skipped: 'Converted {count} file(s) to {name} ({skipped} item(s) left out)',
     browse_convert_failed: 'Failed to convert this file',
@@ -397,6 +399,8 @@ Object.assign(I18N.ru, {
     // CBR conversion (locked file panel only)
     browse_file_convert: 'Конвертировать в CBZ',
     browse_file_converting: 'Конвертация…',
+    // In-flight telegram downloads (Browse badges)
+    browse_dl_queued: 'В очереди',
     browse_convert_done: 'Конвертировано {count} файл(ов) в {name}',
     browse_convert_done_skipped: 'Конвертировано {count} файл(ов) в {name} (пропущено: {skipped})',
     browse_convert_failed: 'Не удалось конвертировать файл',

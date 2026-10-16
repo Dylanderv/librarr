@@ -503,6 +503,9 @@ const state = {
   browsePath: null,
   browseIsRoot: true,
   browseKavita: false,
+  // Active telegram downloads by file name (refreshed while Browse is open).
+  browseDownloads: {},
+  browseDlTimer: null,
   // Rename panel: the folder it was opened on, and the volumes the user typed
   // (file name -> number). Kept out of the DOM so a re-render never loses them.
   renamePath: null,
@@ -974,7 +977,8 @@ function switchTab(tab) {
 
   // Load data for the tab
   if (tab === 'library') loadLibrary();
-  if (tab === 'browse') loadBrowse();
+  if (tab === 'browse') { loadBrowse(); startBrowseDownloadPolling(); }
+  else stopBrowseDownloadPolling();
   if (tab === 'downloads') { refreshDownloads(); startDownloadPolling(); }
   else stopDownloadPolling();
   if (tab === 'wishlist') loadWishlist();
