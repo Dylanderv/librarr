@@ -51,7 +51,6 @@ var (
 	dlClient = &http.Client{Timeout: dlProxyTimeout}
 
 	dlMu          sync.Mutex
-	dlAt          time.Time
 	dlUntil       time.Time
 	dlItems       []activeDownload
 	dlUnreachable time.Time
@@ -60,7 +59,7 @@ var (
 // resetDownloadsCache empties the proxy cache. Tests only.
 func resetDownloadsCache() {
 	dlMu.Lock()
-	dlAt, dlUntil, dlUnreachable = time.Time{}, time.Time{}, time.Time{}
+	dlUntil, dlUnreachable = time.Time{}, time.Time{}
 	dlItems = nil
 	dlMu.Unlock()
 }
@@ -92,7 +91,6 @@ func (s *Server) activeDownloads() []activeDownload {
 	items := fetchActiveDownloads(s.cfg)
 
 	dlMu.Lock()
-	dlAt = now
 	if items == nil {
 		// Sidecar down: serve emptiness for a while instead of retrying
 		// every Browse poll.
