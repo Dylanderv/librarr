@@ -5,56 +5,215 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>telegram-downloader</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
-  input, select, button { padding: .4rem .6rem; margin: .2rem; }
-  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-  th, td { border: 1px solid #ccc; padding: .4rem; text-align: left; font-size: .9rem; }
-  .bar { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; }
-  .bar > div { height: 100%; background: #2a7; }
-  #status { font-weight: bold; }
+  :root {
+    --bg: #f4f6f8; --card: #fff; --border: #e2e6ea; --text: #1c2430; --muted: #68727e;
+    --accent: #16794d; --accent-soft: #e7f5ee; --danger: #b23b2e; --danger-soft: #fdeeec;
+    --sel: #e8f1fb; --sel-border: #3b82c4; --hover: #f2f4f7;
+    --radius: 12px; --radius-s: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text);
+         max-width: 1150px; margin: 0 auto; padding: 1.2rem 1rem 5rem; }
+  h1 { font-size: 1.35rem; margin: 0 0 .2rem; }
+  .sub { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+          padding: .9rem 1rem; margin: .8rem 0; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .card h2 { font-size: .95rem; margin: 0 0 .6rem; }
+  input, select { padding: .38rem .55rem; border: 1px solid var(--border); border-radius: var(--radius-s);
+                  font: inherit; background: #fff; color: var(--text); }
+  input:focus, select:focus { outline: 2px solid var(--sel-border); outline-offset: 1px; }
+  button { padding: .38rem .7rem; border: 1px solid var(--border); border-radius: var(--radius-s);
+           font: inherit; background: #fff; cursor: pointer; color: var(--text); }
+  button:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn-primary:hover { background: #116841; }
+  .btn-danger { background: var(--danger-soft); border-color: #f2c4bd; color: var(--danger); }
+  .btn-danger:hover { background: #fbdfd9; }
+  .btn-ghost { background: var(--hover); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  small { color: var(--muted); }
+  .grow { flex: 1; }
+
+  details.sec > summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+  details.sec > summary::after { content: ' ▸'; color: var(--muted); font-size: .8rem; }
+  details.sec[open] > summary::after { content: ' ▾'; }
+
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--muted); padding: .25rem .4rem; border-bottom: 1px solid var(--border); }
+  td { padding: .32rem .4rem; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  tr:hover td { background: #fafcfd; }
+  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 99px; font-size: .74rem;
+           font-weight: 600; background: var(--hover); color: var(--muted); white-space: nowrap; }
+  .badge.done { background: var(--accent-soft); color: var(--accent); }
+  .badge.err  { background: var(--danger-soft); color: var(--danger); }
+  .badge.dl   { background: #e8f1fb; color: #2b6cb0; }
+  .bar { height: 6px; background: #e9edf1; border-radius: 99px; overflow: hidden; margin-top: 2px; }
+  .bar > div { height: 100%; background: #3b82c4; }
+  .chk { transform: scale(1.05); accent-color: var(--accent); }
+
+  /* --- volets tri --- */
+  .tri-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .9rem; margin-top: .6rem; }
+  @media (max-width: 800px) { .tri-grid { grid-template-columns: minmax(0, 1fr); } }
+  .pane { border: 1px solid var(--border); border-radius: var(--radius); background: #fff;
+          display: flex; flex-direction: column; min-height: 260px; max-height: 480px; min-width: 0; }
+  .pane-head { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap;
+               padding: .5rem .6rem; border-bottom: 1px solid var(--border); background: #fafbfc;
+               font-size: .85rem; font-weight: 600; }
+  .pane-body { overflow: auto; padding: .35rem .5rem; flex: 1; }
+  .empty { color: var(--muted); font-size: .85rem; padding: .7rem; text-align: center; }
+
+  /* Contenu largeur-nom : le volet garde sa taille, on scrolle au besoin. */
+  #staged .file-row { display: flex; gap: .5rem; align-items: center; padding: .3rem .35rem;
+                      border-radius: 8px; width: max-content; min-width: 100%; }
+  #staged .fname { white-space: nowrap; color: var(--text); }
+
+  /* --- arbre de destination --- */
+  .tree .node > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .4rem;
+                  padding: .26rem .45rem; border-radius: var(--radius-s); font-size: .88rem; }
+  .tree summary::-webkit-details-marker { display: none; }
+  .tree .node > summary::before {
+    content: '';
+    flex: none;
+    align-self: center;
+    width: .55rem; height: .55rem;
+    margin-right: .3rem;
+    border-right: 2.5px solid var(--muted);
+    border-bottom: 2.5px solid var(--muted);
+    transform: rotate(-45deg);            /* pointe à droite (plié) */
+    transition: transform .12s ease;
+  }
+  .tree .node[open] > summary::before { transform: rotate(45deg); }   /* pointe en bas (déplié) */
+  .tree .node.tree-leaf > summary::before { visibility: hidden; }
+  .tree .node > summary:hover { background: var(--hover); }
+  .tree .node.sel > summary { background: var(--sel); outline: 1px solid var(--sel-border); }
+  .tree .node.sel > summary .name { font-weight: 600; color: var(--sel-border); }
+  .tree .node > summary { width: max-content; min-width: 100%; }
+  .tree .name { white-space: nowrap; }
+  .cnt { flex: none; color: var(--muted); font-size: .72rem; border: 1px solid var(--border);
+         border-radius: 99px; padding: 0 .45rem; min-width: 1.4rem; text-align: center; }
+  .mk { flex: none; border: none; background: none; padding: 0 .3rem; font-size: .95rem;
+        color: var(--muted); border-radius: var(--radius-s); line-height: 1.4; }
+  .mk:hover { background: var(--accent-soft); color: var(--accent); }
+  .kids { padding-left: .9rem; border-left: 1px solid var(--border); margin-left: .45rem; }
+  .tree .tree-files { font-size: .78rem; color: var(--muted); padding: .1rem 0 .15rem;
+                      width: max-content; min-width: 100%; }
+  .tree .file-item { display: flex; justify-content: space-between; gap: .5rem;
+                     padding: .12rem .45rem .12rem 2.1rem; }
+  .tree .file-item .fname { white-space: nowrap; }
+  .tree .file-item .cnt { border: none; padding: 0; }
+  .tree .file-item .mk { padding: 0 .2rem; }
+  .mkform { display: flex; gap: .35rem; align-items: center; padding: .3rem .45rem; }
+  .mkform .mkname { flex: 1; min-width: 0; font-size: .85rem; }
+  .mkform button { font-size: .8rem; padding: .3rem .55rem; }
+
+  .bulkbar { position: sticky; bottom: .8rem; margin-top: .7rem; display: flex; gap: .55rem;
+             align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid var(--border);
+             border-radius: var(--radius); padding: .55rem .8rem; box-shadow: 0 6px 18px rgba(16,24,40,.14); }
+  .crumb { font-size: .85rem; background: var(--accent-soft); color: var(--accent); font-weight: 600;
+           padding: .22rem .6rem; border-radius: 99px; }
+  .sel-count { font-size: .85rem; }
+
+  /* --- toasts (aucun alert/confirm bloqué) --- */
+  .toasts { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column;
+            gap: .45rem; max-width: 430px; z-index: 60; }
+  .toast { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--accent);
+           border-radius: 10px; padding: .5rem .65rem; box-shadow: 0 8px 24px rgba(16,24,40,.16);
+           font-size: .85rem; position: relative; }
+  .toast.err { border-left-color: var(--danger); }
+  .toast .t-title { font-weight: 600; margin-bottom: .1rem; padding-right: 1.2rem; }
+  .toast .t-body { color: var(--muted); white-space: pre-line; word-break: break-word; }
+  .toast .t-close { position: absolute; top: .25rem; right: .3rem; border: none; background: none;
+                    font-size: 1rem; color: var(--muted); padding: .1rem .35rem; }
+  .toast .t-close:hover { color: var(--text); }
 </style>
 </head>
 <body>
 <h1>telegram-downloader</h1>
+<p class="sub">Recherche &rsaquo; download (fichier complet uniquement) &rsaquo; tri vers la biblioth&egrave;que</p>
+
+<details class="sec card" open>
+  <summary>1. Cl&eacute; API</summary>
+  <div class="row" style="margin-top:.6rem">
+    <input id="apikey" type="password" size="55" placeholder="X-Api-Key (TELEGRAM_SIDECAR_API_KEY)">
+    <button class="btn-primary" onclick="saveKey()">OK</button>
+    <span id="status" class="badge">non connect&eacute;</span>
+  </div>
+</details>
+
+<details class="sec card">
+  <summary>2. Serveur &amp; recherche</summary>
+  <div class="row" style="margin-top:.6rem">
+    <button onclick="loadDialogs()">Lister les serveurs</button>
+    <select id="dialogs"></select>
+  </div>
+  <div class="row" style="margin-top:.5rem">
+    <input id="q" type="text" size="34" placeholder="ex: dune">
+    <input id="limit" type="number" value="20" min="1" max="200" style="width:4.2rem">
+    <button class="btn-primary" onclick="search()">Chercher</button>
+  </div>
+  <small>Les fichiers vont au staging (pas de cat&eacute;gorie &agrave; choisir) ; le tri se fait en section 4.</small>
+  <table id="results" style="margin-top:.4rem"></table>
+</details>
+
+<details class="sec card">
+  <summary>3. File de t&eacute;l&eacute;chargement (1 &agrave; la fois)</summary>
+  <div class="row" style="margin-top:.6rem">
+    <button onclick="loadJobs()">Rafra&icirc;chir</button>
+    <label><input type="checkbox" id="auto" checked class="chk"> auto-refresh</label>
+  </div>
+  <table id="jobs" style="margin-top:.3rem"></table>
+</details>
 
 <section>
-  <h2>1. Clé API</h2>
-  <input id="apikey" type="password" size="60" placeholder="X-Api-Key (TELEGRAM_SIDECAR_API_KEY)">
-  <button onclick="saveKey()">OK</button>
-  <span id="status">non connecté</span>
+  <h2>4. Tri de la biblioth&egrave;que</h2>
+
+  <div class="tri-grid">
+    <div class="pane">
+      <div class="pane-head">
+        En attente de tri
+        <label style="font-weight:400"><input type="checkbox" id="selAll" class="chk" onchange="toggleAll(this)"> tout</label>
+        <span class="grow"></span>
+        <button class="btn-ghost" onclick="loadStaged()">⟳</button>
+      </div>
+      <div class="pane-body" id="staged"></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        Destination
+        <label style="font-weight:400"><input type="checkbox" id="showFiles" class="chk" checked onchange="onShowFiles()"> fichiers</label>
+        <span class="grow"></span>
+        <button class="btn-ghost" onclick="loadTree()">⟳</button>
+      </div>
+      <div class="pane-body tree" id="tree"></div>
+    </div>
+  </div>
+
+  <div class="bulkbar">
+    <span class="sel-count"><span id="selN">0</span> s&eacute;lectionn&eacute;(s) &middot;
+      <span class="crumb" id="crumb">—</span></span>
+    <span class="grow"></span>
+    <button class="btn-primary" id="btnMove" onclick="moveSelected()" disabled>D&eacute;placer</button>
+    <button class="btn-danger" id="btnDel" onclick="deleteSelected(this)" disabled>Supprimer</button>
+  </div>
 </section>
 
-<section>
-  <h2>2. Serveur</h2>
-  <button onclick="loadDialogs()">Lister les serveurs</button>
-  <select id="dialogs"></select>
-</section>
-
-<section>
-  <h2>3. Recherche</h2>
-  <input id="q" type="text" size="40" placeholder="ex: dune">
-  <input id="limit" type="number" value="20" min="1" max="200" style="width:4rem">
-  <button onclick="search()">Chercher</button>
-  <select id="cat"><option>ebooks</option><option>audiobooks</option><option selected>manga</option></select>
-  <table id="results"></table>
-</section>
-
-<section>
-  <h2>4. File de téléchargement (1 à la fois)</h2>
-  <button onclick="loadJobs()">Rafraîchir</button>
-  <label><input type="checkbox" id="auto" checked> auto-refresh</label>
-  <table id="jobs"></table>
-</section>
+<div class="toasts" id="toasts"></div>
 
 <script>
+'use strict';
 const $ = id => document.getElementById(id);
 let KEY = localStorage.getItem('tg_key') || '';
 $('apikey').value = KEY;
 
+/* ---------- base ---------- */
 function saveKey() {
   KEY = $('apikey').value.trim();
   localStorage.setItem('tg_key', KEY);
-  authStatus();
+  boot();
 }
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { 'X-Api-Key': KEY, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -62,32 +221,327 @@ async function api(path, opts = {}) {
   return r.json();
 }
 async function authStatus() {
-  try { const s = await api('/auth/status'); $('status').textContent = s.authorized ? 'connecté ✔ (uid ' + s.user_id + ')' : 'clé OK mais Telegram non loggé'; }
-  catch (e) { $('status').textContent = 'erreur clé/API'; }
+  try {
+    const s = await api('/auth/status');
+    $('status').textContent = s.authorized ? 'Telegram connecté ✔' : 'clé OK, Telegram non loggé';
+    $('status').className = 'badge ' + (s.authorized ? 'done' : 'err');
+  } catch (e) { $('status').textContent = 'clé invalide / serveur injoignable'; $('status').className = 'badge err'; }
 }
+function boot() { if (KEY) { authStatus(); loadJobs(); loadStaged(); loadTree(); } }
+
+/* ---------- recherche & file ---------- */
 async function loadDialogs() {
-  const d = await api('/dialogs');
-  $('dialogs').innerHTML = d.map(x => `<option value="${x.id}">[${x.kind}] ${x.title}</option>`).join('');
+  try {
+    const d = await api('/dialogs');
+    $('dialogs').innerHTML = d.map(x => `<option value="${x.id}">[${x.kind}] ${x.title}</option>`).join('');
+  } catch (e) { toast('Liste des serveurs impossible', e.message, 'err'); }
 }
 async function search() {
   const id = $('dialogs').value;
-  if (!id) return alert('choisis un serveur');
-  const r = await api(`/dialogs/${id}/search?q=${encodeURIComponent($('q').value)}&limit=${$('limit').value}`);
-  $('results').innerHTML = '<tr><th>message</th><th>fichier</th><th>taille</th><th></th></tr>' + r.map(m =>
-    `<tr><td>${m.message_id}<br><small>${(m.text_snippet || '').slice(0, 80)}</small></td><td>${m.filename || '?'}</td><td>${m.size_bytes ? (m.size_bytes / 1048576).toFixed(1) + ' Mo' : '?'}</td><td><button onclick="enqueue(${id},${m.message_id})">Télécharger</button></td></tr>`).join('');
+  if (!id) { toast('Choisis un serveur', '', 'err'); return; }
+  try {
+    const r = await api(`/dialogs/${id}/search?q=${encodeURIComponent($('q').value)}&limit=${$('limit').value}`);
+    $('results').innerHTML = '<tr><th>message</th><th>fichier</th><th>taille</th><th></th></tr>' + r.map(m =>
+      `<tr><td>#${m.message_id}<br><small>${(m.text_snippet || '').slice(0, 90)}</small></td><td>${esc(m.filename || '?')}</td><td>${fmtMo(m.size_bytes)}</td><td><button class="btn-primary" onclick="enqueue(${id},${m.message_id})">Télécharger</button></td></tr>`).join('');
+  } catch (e) { toast('Recherche impossible', e.message, 'err'); }
 }
 async function enqueue(dialog_id, message_id) {
-  await api('/downloads', { method: 'POST', body: JSON.stringify({ dialog_id, message_id, category: $('cat').value }) });
+  try {
+    await api('/downloads', { method: 'POST', body: JSON.stringify({ dialog_id, message_id }) });
+  } catch (e) { toast('Enfilement refusé', e.message, 'err'); }
   loadJobs();
 }
+const STATUS_LABEL = { queued: ['en file', 'dl'], downloading: ['download', 'dl'], done: ['✔ téléchargé', 'done'],
+                       error: ['erreur', 'err'], cancelled: ['annulé', ''] };
 async function loadJobs() {
-  const j = await api('/downloads');
-  $('jobs').innerHTML = '<tr><th>job</th><th>cat</th><th>statut</th><th>progression</th><th>fichier</th><th></th></tr>' + j.map(x =>
-    `<tr><td>${x.id.slice(0, 8)}</td><td>${x.category}</td><td>${x.status}${x.error ? '<br><small>' + x.error + '</small>' : ''}</td><td><div class="bar"><div style="width:${(x.progress * 100).toFixed(0)}%"></div></div>${(x.progress * 100).toFixed(0)}%</td><td><small>${x.filename || ('message #' + x.message_id)}${x.size_bytes ? ' · ' + (x.size_bytes / 1048576).toFixed(1) + ' Mo' : ''}</small></td><td>${['queued', 'downloading'].includes(x.status) ? `<button onclick="cancelJob('${x.id}')">Annuler</button>` : ''}</td></tr>`).join('');
+  let j;
+  try { j = await api('/downloads'); } catch (e) { return; }
+  $('jobs').innerHTML = '<tr><th>statut</th><th>fichier</th><th></th></tr>' + j.map(x => {
+    const [label, cls] = STATUS_LABEL[x.status] || [x.status, ''];
+    const prog = ['queued', 'downloading'].includes(x.status)
+      ? `<div class="bar"><div style="width:${(x.progress * 100).toFixed(0)}%"></div></div>` : '';
+    return `<tr><td><span class="badge ${cls}">${label}</span>${x.error ? `<br><small>${esc(x.error)}</small>` : ''}</td>
+      <td>${esc(x.filename || 'message #' + x.message_id)}${x.size_bytes ? ' · ' + fmtMo(x.size_bytes) : ''}${prog}</td>
+      <td>${['queued', 'downloading'].includes(x.status) ? `<button class="btn-danger" onclick="cancelJob('${x.id}')">✕</button>` : ''}</td></tr>`;
+  }).join('');
 }
-async function cancelJob(id) { await api('/downloads/' + id, { method: 'DELETE' }); loadJobs(); }
-setInterval(() => { if ($('auto').checked && KEY) loadJobs(); }, 3000);
-if (KEY) authStatus();
+async function cancelJob(id) {
+  try { await api('/downloads/' + id, { method: 'DELETE' }); loadJobs(); }
+  catch (e) { toast('Annulation impossible', e.message, 'err'); }
+}
+
+/* ---------- utilitaires ---------- */
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+const encAttr = s => encodeURIComponent(s).replace(/'/g, '%27');
+function fmtMo(bytes) {
+  if (!bytes) return '0 o';
+  if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' Go';
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' Mo';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' Ko';
+  return bytes + ' o';
+}
+function toast(title, body, kind = 'ok') {
+  const t = document.createElement('div');
+  t.className = 'toast' + (kind === 'err' ? ' err' : '');
+  t.innerHTML = `<div class="t-title">${esc(title)}</div>` + (body ? `<div class="t-body">${esc(body)}</div>` : '');
+  const x = document.createElement('button');
+  x.textContent = '×'; x.className = 't-close';
+  x.onclick = () => t.remove();
+  t.appendChild(x);
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), kind === 'err' ? 12000 : 6000);
+}
+function armButton(btn, label) {
+  if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; return true; }
+  btn.dataset.armed = '1'; btn.textContent = 'Confirmer ?';
+  setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; } }, 4000);
+  return false;
+}
+
+/* ---------- tri : fichiers du staging ---------- */
+const selected = new Set();   // persiste entre les auto-refresh
+function toggleAll(cb) {
+  document.querySelectorAll('#staged input[type=checkbox]').forEach(c => {
+    c.checked = cb.checked;
+    const n = decodeURIComponent(c.dataset.file);
+    if (cb.checked) { selected.add(n); } else { selected.delete(n); }
+  });
+  updateBulkbar();
+}
+function toggleOne(cb) {
+  const n = decodeURIComponent(cb.dataset.file);
+  if (cb.checked) { selected.add(n); } else { selected.delete(n); }
+  updateBulkbar();
+}
+function updateBulkbar() {
+  const n = selected.size;
+  $('selN').textContent = n;
+  $('crumb').textContent = destNode || 'choisis une destination';
+  $('btnMove').disabled = !n || !destNode;
+  $('btnDel').disabled = !n;
+}
+async function loadStaged() {
+  let files;
+  try { files = await api('/staging'); } catch (e) { return; }
+  const names = new Set(files.map(f => f.filename));
+  [...selected].forEach(n => { if (!names.has(n)) selected.delete(n); });
+  if (!files.length) {
+    $('staged').innerHTML = '<div class="empty">Aucun fichier en attente de tri ✔</div>';
+    $('selAll').checked = false;
+    updateBulkbar();
+    return;
+  }
+  $('staged').innerHTML = files.map(f => {
+    const enc = encAttr(f.filename);
+    return `<div class="file-row">
+      <input type="checkbox" data-file="${enc}" class="chk" onchange="toggleOne(this)">
+      <span class="fname" title="${esc(f.filename)}">${esc(f.filename)}</span>
+      <small>${fmtMo(f.size_bytes)}</small>
+      <button class="btn-ghost" onclick="moveOne('${enc}')" title="Déplacer vers la destination choisie">→</button>
+      <button class="btn-ghost" onclick="deleteStaged('${enc}', this)" title="Supprimer (2 clics)">🗑</button>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#staged input[type=checkbox]').forEach(c => {
+    c.checked = selected.has(decodeURIComponent(c.dataset.file));
+  });
+  $('selAll').checked = [...names].every(n => selected.has(n));
+  updateBulkbar();
+}
+
+/* ---------- tri : arbre de destination (+ fichiers) ---------- */
+let TREE = {};
+let destNode = '';
+let showFiles = true;
+const filesCache = new Map();   // chemin -> liste affichée (« ⟳ » invalide)
+
+async function loadTree() {
+  try { TREE = await api('/staging/tree'); } catch (e) { return; }
+  filesCache.clear();
+  if (!destNode) { destNode = 'ebooks'; }
+  renderTree();
+}
+function buildNode(catName) {
+  const root = { name: catName, path: catName, children: {}, count: null };
+  for (const item of TREE[catName] || []) {
+    let node = root;
+    let acc = catName;
+    for (const seg of item.path.split('/')) {
+      node.children[seg] ??= { name: seg, path: '', children: {}, count: 0 };
+      node = node.children[seg];
+      acc = acc ? acc + '/' + seg : seg;
+      node.path = acc;
+    }
+    node.count = item.files;
+  }
+  return root;
+}
+function nodeHtml(node, depth) {
+  const kids = Object.values(node.children);
+  const hasKids = kids.length > 0 || depth === 0;
+  const inner = `
+    <summary onclick="selectNode('${encAttr(node.path)}')">
+      <span class="name">${esc(node.name)}</span>
+      ${node.count != null ? `<span class="cnt">${node.count}</span>` : ''}
+      <button class="mk" title="Nouveau sous-dossier"
+              onclick="createFolderForm(this);event.stopPropagation();event.preventDefault()">＋</button>
+    </summary>`;
+  if (!hasKids) {
+    return `<details class="node tree-leaf" data-node="${encAttr(node.path)}">${inner}</details>`;
+  }
+  const kidsHtml = kids.map(k => nodeHtml(k, depth + 1)).join('');
+  return `<details class="node" data-node="${encAttr(node.path)}"${depth === 0 ? ' open' : ''}>
+    ${inner} <div class="kids">${kidsHtml}</div></details>`;
+}
+function renderTree() {
+  const hadTree = !!document.querySelector('#tree details[data-node]');
+  const opens = new Set([...document.querySelectorAll('#tree details[data-node]')]
+    .filter(d => d.open).map(d => d.dataset.node));
+  let html = '';
+  for (const cat of ['ebooks', 'audiobooks', 'manga']) {
+    if (!TREE[cat]) { html += `<div class="empty">${cat} : …</div>`; continue; }
+    html += nodeHtml(buildNode(cat), 0);
+  }
+  $('tree').innerHTML = html;
+  const details = [...document.querySelectorAll('#tree details[data-node]')];
+  details.forEach(d => {
+    // 1er rendu : seules les racines (catégories) sont dépliées ; ensuite
+    // chaque nœud garde l'état qu'il avait avant le re-render.
+    d.open = hadTree
+      ? opens.has(d.dataset.node)
+      : decodeURIComponent(d.dataset.node).split('/').length === 1;
+    d.classList.toggle('sel', decodeURIComponent(d.dataset.node) === destNode);
+    if (d.open) { ensureFiles(d); }
+    d.addEventListener('toggle', () => {
+      if (d.open) { ensureFiles(d); } else { d.dataset.filesDone = ''; }
+    });
+  });
+  updateBulkbar();
+}
+function onShowFiles() {
+  showFiles = $('showFiles').checked;
+  filesCache.clear();
+  renderTree();
+}
+async function ensureFiles(d) {
+  if (!showFiles || d.dataset.filesDone === '1') return;
+  const path = decodeURIComponent(d.dataset.node);
+  let files = filesCache.get(path);
+  if (!files) {
+    try { files = (await api('/library/files?path=' + encodeURIComponent(path))).files; }
+    catch (e) { files = []; }
+    filesCache.set(path, files);
+  }
+  renderFilesInto(d, files, path);
+  d.dataset.filesDone = '1';
+}
+function renderFilesInto(d, files, path) {
+  let box = d.querySelector('.tree-files');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'tree-files';
+    d.insertBefore(box, d.querySelector('summary').nextSibling);
+  }
+  box.innerHTML = files.length
+    ? files.map(f =>
+        `<div class="file-item" title="${esc(f.name)}"><span class="fname">${esc(f.name)}</span><span class="cnt">${fmtMo(f.size_bytes)}</span><button class="mk" title="Remettre au staging" onclick="restoreFile('${encAttr(path + '/' + f.name)}')">↩</button></div>`
+      ).join('')
+    : '';
+  if (!files.length && box) { box.remove(); }
+}
+async function restoreFile(enc) {
+  const rel = decodeURIComponent(enc);
+  try {
+    const r = await api('/library/move', { method: 'POST', body: JSON.stringify({ files: [rel], dest: 'staging' }) });
+    if (!r.moved.length && r.skipped.length) {
+      toast('Refusé', r.skipped.map(s => s.error).join('\n'), 'err');
+    } else {
+      toast('Remis au staging', r.moved[0].filename);
+    }
+  } catch (e) { toast('Restauration impossible', e.message, 'err'); }
+  await Promise.all([loadStaged(), loadTree()]);
+}
+function selectNode(path) {
+  destNode = decodeURIComponent(path);
+  document.querySelectorAll('#tree details[data-node]').forEach(n =>
+    n.classList.toggle('sel', decodeURIComponent(n.dataset.node) === destNode));
+  updateBulkbar();
+}
+
+/* ---------- création de sous-dossier (formulaire inline) ---------- */
+function clearMkForms() {
+  document.querySelectorAll('#tree .mkform').forEach(f => f.remove());
+}
+function createFolderForm(btn) {
+  const node = btn.closest('details');
+  node.open = true;
+  clearMkForms();
+  const parent = decodeURIComponent(node.dataset.node);
+  const div = document.createElement('div');
+  div.className = 'mkform';
+  div.innerHTML = `<input class="mkname" placeholder="nom du sous-dossier…">
+    <button class="btn-primary mkok">Créer</button><button class="btn-ghost mkcancel">✕</button>`;
+  node.appendChild(div);
+  const input = div.querySelector('.mkname');
+  input.focus();
+  const submit = async () => {
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    try {
+      await api('/staging/mkdir', { method: 'POST', body: JSON.stringify({ dest: parent + '/' + name }) });
+      clearMkForms();
+      await loadTree();
+      selectNode(encAttr(parent + '/' + name));
+      toast('Sous-dossier créé', parent + '/' + name);
+    } catch (e) { toast('Création impossible', e.message, 'err'); }
+  };
+  div.querySelector('.mkok').onclick = submit;
+  div.querySelector('.mkcancel').onclick = () => div.remove();
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') submit();
+    if (e.key === 'Escape') div.remove();
+  });
+}
+
+/* ---------- actions bulk ---------- */
+async function moveOne(enc) { await moveFiles([decodeURIComponent(enc)]); }
+async function moveSelected() { await moveFiles([...selected]); }
+async function moveFiles(filenames) {
+  if (!filenames.length || !destNode) return;
+  try {
+    const r = await api('/staging/move', { method: 'POST', body: JSON.stringify({ files: filenames, dest: destNode }) });
+    selected.clear();
+    if (!r.moved.length && r.skipped.length) {
+      toast('Aucun déplacement', r.skipped.map(s => '· ' + s.filename + ' — ' + s.error).join('\n'), 'err');
+    } else {
+      toast(r.moved.length + ' fichier(s) déplacé(s)', destNode);
+      if (r.skipped.length) toast('Refusés :', r.skipped.map(s => '· ' + s.filename + ' — ' + s.error).join('\n'), 'err');
+    }
+  } catch (e) { toast('Déplacement refusé', e.message, 'err'); }
+  await Promise.all([loadStaged(), loadTree()]);
+}
+async function deleteSelected(btn) {
+  if (!selected.size || !armButton(btn, 'Supprimer')) return;
+  for (const n of [...selected]) {
+    try { await api('/staging/' + encAttr(n), { method: 'DELETE' }); selected.delete(n); }
+    catch (e) { toast('Suppression impossible', n + ' — ' + e.message, 'err'); }
+  }
+  toast('Sélection supprimée', '');
+  await loadStaged();
+}
+async function deleteStaged(enc, btn) {
+  const filename = decodeURIComponent(enc);
+  if (!btn || !armButton(btn, '🗑')) return;
+  try {
+    await api('/staging/' + enc, { method: 'DELETE' });
+    selected.delete(filename);
+    await loadStaged();
+  } catch (e) { toast('Suppression impossible', e.message, 'err'); }
+}
+
+setInterval(() => {
+  if ($('auto').checked && KEY) { loadJobs(); loadStaged(); }
+}, 3000);
+boot();
 </script>
 </body>
 </html>

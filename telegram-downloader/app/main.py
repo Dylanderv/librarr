@@ -6,14 +6,19 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
+from . import files as fs
 from . import store
 from . import telegram_service as tg
 from .config import settings
 from .schemas import (
     CodeConfirmIn,
     CodeRequestIn,
+    DestIn,
     EnqueueDownloadIn,
     JobOut,
+    LibraryMoveIn,
+    MoveIn,
+    StagedFileOut,
 )
 from .security import require_api_key
 
@@ -65,7 +70,6 @@ async def worker_loop():
                 res = await tg.download_attachment(
                     job["dialog_id"],
                     job["message_id"],
-                    job["category"],
                     progress_cb=_cb,
                 )
                 if job["id"] in cancelled:
@@ -120,6 +124,8 @@ async def lifespan(app: FastAPI):
     global worker_task
     await store.init_db(settings.telegram_db_path)
     await store.reset_stuck(settings.telegram_db_path)
+    # Purge des téléchargements partiels (.tmp.*) restés sur disque.
+    fs.clear_tmp()
     stop_event.clear()
     worker_task = asyncio.create_task(worker_loop())
     yield
@@ -194,7 +200,7 @@ async def search(
 @app.post("/downloads", response_model=JobOut)
 async def enqueue_dl(body: EnqueueDownloadIn, _: None = Depends(require_api_key)):
     job = await store.enqueue(
-        settings.telegram_db_path, body.dialog_id, body.message_id, body.category.value
+        settings.telegram_db_path, body.dialog_id, body.message_id
     )
     meta = await tg.peek_attachment(body.dialog_id, body.message_id)
     fill = {k: v for k, v in meta.items() if v is not None}
@@ -227,3 +233,123 @@ async def cancel_dl(job_id: str, _: None = Depends(require_api_key)):
         await store.update_job(settings.telegram_db_path, job_id, status="cancelled")
         job = await store.get_job(settings.telegram_db_path, job_id)
     return job
+
+
+# --- Staging : tri des fichiers téléchargés -------------------------------
+
+
+@app.get("/categories")
+async def list_categories(_: None = Depends(require_api_key)):
+    return [{"id": name, "path": str(p)} for name, p in fs.categories().items()]
+
+
+@app.get("/staging", response_model=list[StagedFileOut])
+async def list_staged(_: None = Depends(require_api_key)):
+    return fs.list_staged()
+
+
+@app.get("/staging/tree")
+async def staging_tree(_: None = Depends(require_api_key)):
+    """Arborescence existante par bibliothèque (pour l'explorateur de destination)."""
+    return {name: fs.subdirs(name) for name in fs.categories()}
+
+
+@app.post("/staging/mkdir")
+async def staging_mkdir(body: DestIn, _: None = Depends(require_api_key)):
+    """Crée 'categorie/sous/dossier' (idempotent)."""
+    try:
+        made = fs.make_dir(body.dest)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"created": True, "dest": str(made)}
+
+
+@app.get("/library/files")
+async def library_files(path: str = Query(), _: None = Depends(require_api_key)):
+    """Fichiers directs d'un dossier de bibliothèque (pour l'explorateur)."""
+    try:
+        return {"path": path, "files": fs.list_files(path)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/library/move")
+async def move_library(body: LibraryMoveIn, _: None = Depends(require_api_key)):
+    """Réorganise les fichiers d'une bibliothèque, indépendamment de la file.
+
+    dest = 'staging' (mauvais rangement -> re-tri) ou 'categorie/sous/dossier'.
+    """
+    if not body.files:
+        raise HTTPException(status_code=422, detail="aucun fichier fourni")
+    dest_dir = None
+    category = None
+    if body.dest != "staging":
+        try:
+            category, dest_dir = fs.resolve_dest(body.dest)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    moved: list[dict] = []
+    skipped: list[dict] = []
+    for rel in body.files:
+        try:
+            src = fs.resolve_library(rel)
+            res = (
+                fs.move_to_staging(src)
+                if dest_dir is None
+                else fs.move_into(src, category, dest_dir)
+            )
+        except FileNotFoundError:
+            skipped.append({"filename": rel, "error": "absent de la bibliothèque"})
+        except IsADirectoryError:
+            skipped.append({"filename": rel, "error": "n'est pas un fichier"})
+        except FileExistsError as e:
+            skipped.append({"filename": rel, "error": f"existe déjà: {e}"})
+        except ValueError as e:
+            skipped.append({"filename": rel, "error": str(e)})
+        else:
+            moved.append(res)
+    return {"moved": moved, "skipped": skipped}
+
+
+@app.post("/staging/move")
+async def move_staged(body: MoveIn, _: None = Depends(require_api_key)):
+    """Déplace des fichiers du staging vers 'categorie/sous/dossier'.
+
+    Résultat par fichier : moved + skipped (collisions, absents).
+    """
+    if not body.files:
+        raise HTTPException(status_code=422, detail="aucun fichier fourni")
+    try:
+        category, dest_dir = fs.resolve_dest(body.dest)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    moved: list[dict] = []
+    skipped: list[dict] = []
+    for filename in body.files:
+        try:
+            src = fs.resolve_staged(filename)
+            res = fs.move_into(src, category, dest_dir)
+        except FileNotFoundError:
+            skipped.append({"filename": filename, "error": "absent du staging"})
+        except FileExistsError as e:
+            skipped.append({"filename": filename, "error": f"existe déjà: {e}"})
+        except ValueError as e:
+            skipped.append({"filename": filename, "error": str(e)})
+        else:
+            moved.append(res)
+    return {"moved": moved, "skipped": skipped}
+
+
+@app.delete("/staging/{filename}")
+async def delete_staged(filename: str, _: None = Depends(require_api_key)):
+    """Supprime du staging un fichier indésirable (la file n'est pas touchée)."""
+    try:
+        fs.resolve_staged(filename)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="fichier absent du staging")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    fs.delete_staged(filename)
+    return {"deleted": True}

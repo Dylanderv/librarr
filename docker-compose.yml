@@ -34,6 +34,9 @@ services:
       - "5051:5051"
     volumes:
       - telegram-data:/data/telegram
+      # Staging : les downloads atterrissent ici puis sont déplacés vers
+      # /books/* via l'interface. Même parent que /books/* => rename atomique.
+      - /data/media/books/.telegram-incoming:/downloads
       - /data/media/books/ebooks:/books/ebooks
       - /data/media/books/audiobooks:/books/audiobooks
       - /data/media/books/manga:/books/manga
@@ -42,6 +45,7 @@ services:
     environment:
       - TELEGRAM_SESSION_PATH=/data/telegram/session
       - TELEGRAM_DB_PATH=/data/telegram/queue.db
+      - DOWNLOAD_DIR=/downloads
       - EBOOK_DIR=/books/ebooks
       - AUDIOBOOK_DIR=/books/audiobooks
       - MANGA_DIR=/books/manga

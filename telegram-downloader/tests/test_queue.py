@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 from app import store
@@ -27,6 +26,68 @@ def test_allowed_extensions():
     assert not is_allowed_file("movie.mkv", 2_000_000_000, 1_000)
     assert not is_allowed_file("huge.epub", 10, 11)
     assert not is_allowed_file(None, 2_000_000_000, 1_000)
+
+
+@pytest.mark.asyncio
+async def test_enqueue_defaults_to_staging(tmp_path):
+    db = str(tmp_path / "q.db")
+    await store.init_db(db)
+    j = await store.enqueue(db, 1, 2)
+    assert j["category"] == "staging"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_reuses_active_job_on_duplicate(tmp_path):
+    db = str(tmp_path / "q.db")
+    await store.init_db(db)
+    j1 = await store.enqueue(db, 10, 20)
+    j2 = await store.enqueue(db, 10, 20)
+    assert j2["id"] == j1["id"]
+
+
+@pytest.mark.asyncio
+async def test_enqueue_reenqueues_after_done(tmp_path):
+    """Un job terminé ne bloque pas un re-téléchargement du même message."""
+    db = str(tmp_path / "q.db")
+    await store.init_db(db)
+    j1 = await store.enqueue(db, 10, 20)
+    await store.update_job(db, j1["id"], status="done")
+    j2 = await store.enqueue(db, 10, 20)
+    assert j2["id"] != j1["id"]
+    jobs = await store.list_jobs(db)
+    assert len(jobs) == 1 and jobs[0]["id"] == j2["id"]
+
+
+@pytest.mark.asyncio
+async def test_init_db_migrates_legacy_archived_status(tmp_path):
+    """Les bases créées avant la découple queue/triage contiennent des jobs
+    'archived' : ils ne sont plus un statut valide, convertis en 'done'."""
+    legacy = """
+    CREATE TABLE jobs (
+      id TEXT PRIMARY KEY, dialog_id INTEGER NOT NULL, message_id INTEGER NOT NULL,
+      category TEXT NOT NULL, filename TEXT, size_bytes INTEGER,
+      status TEXT NOT NULL DEFAULT 'queued', progress REAL NOT NULL DEFAULT 0,
+      dest_path TEXT, error TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL
+    );
+    """
+    db = str(tmp_path / "q.db")
+    import aiosqlite
+
+    async with aiosqlite.connect(db) as d:
+        await d.executescript(legacy)
+        await d.execute(
+            "INSERT INTO jobs VALUES ('x', 1, 2, 'ebooks', 'a.epub', 10,"
+            " 'archived', 1, '/books/ebooks/a.epub', NULL, 1, 2)"
+        )
+        await d.commit()
+
+    await store.init_db(db)
+    got = await store.get_job(db, "x")
+    assert got["status"] == "done"
+
+    # Idempotent : un second init ne casse rien.
+    await store.init_db(db)
+    assert (await store.get_job(db, "x"))["status"] == "done"
 
 
 @pytest.mark.asyncio
@@ -83,7 +144,10 @@ async def test_peek_returns_filename_and_size(monkeypatch):
     from app import telegram_service as tg
 
     _patch_client(monkeypatch, _FakeClient(_FakeMsg(_FakeFile("book.cbz", 12345))))
-    assert await tg.peek_attachment(1, 2) == {"filename": "book.cbz", "size_bytes": 12345}
+    assert await tg.peek_attachment(1, 2) == {
+        "filename": "book.cbz",
+        "size_bytes": 12345,
+    }
 
 
 @pytest.mark.asyncio

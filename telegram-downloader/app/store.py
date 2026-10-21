@@ -3,6 +3,7 @@
 import aiosqlite
 import time
 import uuid
+from pathlib import Path
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -24,12 +25,23 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 
 async def init_db(db_path: str) -> None:
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(SCHEMA)
+        # Bases antérieures au découplage queue/triage : 'archived' n'est
+        # plus un statut, les jobs correspondants redeviennent de simples
+        # téléchargements terminés.
+        await db.execute("UPDATE jobs SET status='done' WHERE status='archived'")
         await db.commit()
 
 
-async def enqueue(db_path: str, dialog_id: int, message_id: int, category: str) -> dict:
+async def enqueue(
+    db_path: str, dialog_id: int, message_id: int, category: str = "staging"
+) -> dict:
+    """Empile un job. Un même message ne peut être actif (queued/downloading) qu'une fois.
+
+    category vaut toujours 'staging' : la file ne suit pas le tri des fichiers.
+    """
     job_id = str(uuid.uuid4())
     now = time.time()
     async with aiosqlite.connect(db_path) as db:
@@ -42,17 +54,25 @@ async def enqueue(db_path: str, dialog_id: int, message_id: int, category: str) 
             )
             await db.commit()
         except Exception as e:
-            # Doublon (même message + catégorie) -> retourne le job existant.
+            # Doublon : réutilise le job s'il est encore actif, sinon replace
+            # le job terminé (re-téléchargement du même message autorisé).
             if "UNIQUE" in str(e):
                 async with db.execute(
-                    "SELECT id, dialog_id, message_id, category, filename, size_bytes,"
-                    " status, progress, dest_path, error"
-                    " FROM jobs WHERE dialog_id=? AND message_id=? AND category=?",
-                    (dialog_id, message_id, category),
+                    "SELECT id, status FROM jobs WHERE dialog_id=? AND message_id=?"
+                    " ORDER BY status='queued' DESC, status='downloading' DESC LIMIT 1",
+                    (dialog_id, message_id),
                 ) as cur:
                     row = await cur.fetchone()
                 if row:
-                    return _row_to_job(row)
+                    existing_id, existing_status = row
+                    if existing_status in ("queued", "downloading"):
+                        return await _fetch_job(db, existing_id)
+                    await db.execute(
+                        "DELETE FROM jobs WHERE dialog_id=? AND message_id=?",
+                        (dialog_id, message_id),
+                    )
+                    await db.commit()
+                    return await enqueue(db_path, dialog_id, message_id, category)
             raise
     return {
         "id": job_id,
@@ -83,12 +103,23 @@ def _row_to_job(row) -> dict:
     }
 
 
+_COLS = (
+    "id, dialog_id, message_id, category, filename, size_bytes,"
+    " status, progress, dest_path, error"
+)
+
+
+async def _fetch_job(db, job_id: str) -> dict | None:
+    async with db.execute(f"SELECT {_COLS} FROM jobs WHERE id=?", (job_id,)) as cur:
+        row = await cur.fetchone()
+        return _row_to_job(row) if row else None
+
+
 async def list_jobs(db_path: str) -> list[dict]:
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(SCHEMA)
         async with db.execute(
-            "SELECT id, dialog_id, message_id, category, filename, size_bytes,"
-            " status, progress, dest_path, error FROM jobs ORDER BY created_at DESC LIMIT 200"
+            f"SELECT {_COLS} FROM jobs ORDER BY created_at DESC LIMIT 200"
         ) as cur:
             return [_row_to_job(r) async for r in cur]
 
@@ -96,21 +127,14 @@ async def list_jobs(db_path: str) -> list[dict]:
 async def get_job(db_path: str, job_id: str) -> dict | None:
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(SCHEMA)
-        async with db.execute(
-            "SELECT id, dialog_id, message_id, category, filename, size_bytes,"
-            " status, progress, dest_path, error FROM jobs WHERE id=?",
-            (job_id,),
-        ) as cur:
-            row = await cur.fetchone()
-            return _row_to_job(row) if row else None
+        return await _fetch_job(db, job_id)
 
 
 async def next_queued(db_path: str) -> dict | None:
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(SCHEMA)
         async with db.execute(
-            "SELECT id, dialog_id, message_id, category, filename, size_bytes,"
-            " status, progress, dest_path, error FROM jobs"
+            f"SELECT {_COLS} FROM jobs"
             " WHERE status='queued' ORDER BY created_at ASC LIMIT 1"
         ) as cur:
             row = await cur.fetchone()

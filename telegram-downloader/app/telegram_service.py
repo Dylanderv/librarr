@@ -9,8 +9,8 @@ INTERDIT ici : send_message, send_file, join/leave, réactions, marquage lu,
 ou tout appel d'écriture. Voir tests/test_readonly.py qui verrouille ça.
 """
 
-import asyncio
 from pathlib import Path
+import asyncio
 
 ALLOWED_EXTENSIONS = {
     ".epub",
@@ -28,30 +28,9 @@ ALLOWED_EXTENSIONS = {
     ".rar",
 }
 
-CATEGORY_DIRS: dict[str, str] = {}
-
 
 class CancelledDownload(Exception):
     """Levée par le progress callback quand le job est annulé."""
-
-
-def set_category_dirs(mapping: dict[str, str]) -> None:
-    CATEGORY_DIRS.update(mapping)
-
-
-def dest_dir_for(category: str) -> Path:
-    from .config import settings
-
-    base = {
-        "ebooks": settings.ebook_dir,
-        "audiobooks": settings.audiobook_dir,
-        "manga": settings.manga_dir,
-    }.get(category, settings.ebook_dir)
-    if category in CATEGORY_DIRS:
-        base = CATEGORY_DIRS[category]
-    p = Path(base)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
 
 
 def is_allowed_file(filename: str | None, max_bytes: int, size: int | None) -> bool:
@@ -77,6 +56,8 @@ async def get_client():
 
         if not settings.telegram_api_id or not settings.telegram_api_hash:
             raise RuntimeError("TELEGRAM_API_ID / TELEGRAM_API_HASH manquants")
+        # La session sqlite a besoin de son dossier parent.
+        Path(settings.telegram_session_path).parent.mkdir(parents=True, exist_ok=True)
         _client = TelegramClient(
             settings.telegram_session_path,
             settings.telegram_api_id,
@@ -192,15 +173,20 @@ async def peek_attachment(dialog_id: int, message_id: int) -> dict:
 
 
 async def download_attachment(
-    dialog_id: int, message_id: int, category: str, progress_cb=None
+    dialog_id: int, message_id: int, progress_cb=None
 ) -> dict:
-    """Télécharge 1 pièce jointe vers le dossier de sa catégorie. Séquentiel.
+    """Télécharge 1 pièce jointe vers le dossier de staging. Séquentiel.
+
+    Le fichier est d'abord déposé en '.tmp.<nom>' (invisible dans le tri),
+    puis renommé : un fichier listé dans GET /staging est toujours complet.
+    Un nom déjà présent au staging est suffixé : book (1).epub.
 
     progress_cb(done_bytes, total_bytes) est appelé par Telethon ; s'il lève
     CancelledDownload, le téléchargement est interrompu et le partiel supprimé.
     """
     from telethon.errors import FloodWaitError
     from .config import settings
+    from . import files as fs
 
     client = await get_client()
     msg = await client.get_messages(dialog_id, ids=message_id)
@@ -210,7 +196,9 @@ async def download_attachment(
     size = msg.file.size
     if not is_allowed_file(filename, settings.max_file_bytes, size):
         raise RuntimeError(f"fichier refusé (extension/taille): {filename} ({size})")
-    dest = dest_dir_for(category) / filename
+    stage = fs.staging_dir()
+    final = fs.unique_path(stage, Path(filename).name)
+    tmp = stage / f".tmp.{final.name}"
 
     # Download séquentiel avec gestion FloodWait (rate limiting Telegram).
     attempt = 0
@@ -222,16 +210,19 @@ async def download_attachment(
                     if progress_cb:
                         progress_cb(done, total)
 
-                path = await client.download_media(
-                    msg, file=str(dest), progress_callback=_cb
-                )
+                await client.download_media(msg, file=str(tmp), progress_callback=_cb)
                 break
             except FloodWaitError as e:
                 attempt += 1
                 if attempt > 3:
                     raise
                 await asyncio.sleep(e.seconds + 5)
+        tmp.rename(final)  # complet uniquement à cet instant -> visible au tri
     except CancelledDownload:
-        dest.unlink(missing_ok=True)
+        tmp.unlink(missing_ok=True)
         raise
-    return {"filename": filename, "size_bytes": size, "dest_path": str(path or dest)}
+    return {
+        "filename": final.name,
+        "size_bytes": size,
+        "dest_path": str(final),
+    }
