@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ebook_dir: str = "/books/ebooks"
     audiobook_dir: str = "/books/audiobooks"
     manga_dir: str = "/books/manga"
+    bd_dir: str = "/books/bd"
 
     # Staging : les downloads aboutissent ici, puis sont déplacés vers une
     # des bibliothèques ci-dessus depuis l'interface.

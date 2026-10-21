@@ -16,6 +16,8 @@
   - `POST /library/move {files: ["manga/One Piece/tome1.cbz"], dest: "staging"}`
     : remet un fichier mal rangé au staging (ou change un fichier de dossier de
     bibliothèque via un `dest` bibliothèque) ; collision → suffixe ` (1)`.
+  - Bibliothèques : `ebooks`, `audiobooks`, `manga`, `bd` (BD & comics, dir
+    `BD_DIR`).
   - `DELETE /staging/{filename}` : supprime un fichier indésirable.
 - **Read-only** : jamais de `send`, `join/leave`, réaction, `mark_read`. Garde-fou : `tests/test_readonly.py`.
 

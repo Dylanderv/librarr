@@ -20,6 +20,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "ebook_dir", str(tmp_path / "ebooks"))
     monkeypatch.setattr(settings, "audiobook_dir", str(tmp_path / "audiobooks"))
     monkeypatch.setattr(settings, "manga_dir", str(tmp_path / "manga"))
+    monkeypatch.setattr(settings, "bd_dir", str(tmp_path / "bd"))
     monkeypatch.setattr(settings, "telegram_sidecar_api_key", "")  # pas d'auth en test
     with TestClient(app) as client:
         yield client, tmp_path, stage
@@ -55,7 +56,7 @@ def test_categories_lists_the_three_libraries(env):
     r = _api(client).get("/categories")
     assert r.status_code == 200
     cats = r.json()
-    assert [c["id"] for c in cats] == ["ebooks", "audiobooks", "manga"]
+    assert [c["id"] for c in cats] == ["ebooks", "audiobooks", "manga", "bd"]
     assert all(c["path"].startswith(str(tmp_path)) for c in cats)
 
 

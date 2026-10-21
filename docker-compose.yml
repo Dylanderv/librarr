@@ -40,6 +40,7 @@ services:
       - /data/media/books/ebooks:/books/ebooks
       - /data/media/books/audiobooks:/books/audiobooks
       - /data/media/books/manga:/books/manga
+      - /data/media/books/bd:/books/bd
     env_file:
       - .env
     environment:
@@ -49,6 +50,7 @@ services:
       - EBOOK_DIR=/books/ebooks
       - AUDIOBOOK_DIR=/books/audiobooks
       - MANGA_DIR=/books/manga
+      - BD_DIR=/books/bd
 
 volumes:
   librarr-data:

@@ -14,18 +14,27 @@ def dirs(monkeypatch, tmp_path):
     ebooks = tmp_path / "ebooks"
     audiobooks = tmp_path / "audiobooks"
     manga = tmp_path / "manga"
+    bd = tmp_path / "bd"
     stage.mkdir()
     monkeypatch.setattr(settings, "download_dir", str(stage))
     monkeypatch.setattr(settings, "ebook_dir", str(ebooks))
     monkeypatch.setattr(settings, "audiobook_dir", str(audiobooks))
     monkeypatch.setattr(settings, "manga_dir", str(manga))
-    return {"stage": stage, "ebooks": ebooks, "audiobooks": audiobooks, "manga": manga}
+    monkeypatch.setattr(settings, "bd_dir", str(bd))
+    return {
+        "stage": stage,
+        "ebooks": ebooks,
+        "audiobooks": audiobooks,
+        "manga": manga,
+        "bd": bd,
+    }
 
 
 def test_categories(dirs):
     cats = files.categories()
-    assert set(cats) == {"ebooks", "audiobooks", "manga"}
+    assert list(cats) == ["ebooks", "audiobooks", "manga", "bd"]
     assert cats["ebooks"].name == "ebooks"
+    assert cats["bd"] == dirs["bd"]
 
 
 def test_list_staged_empty(dirs):

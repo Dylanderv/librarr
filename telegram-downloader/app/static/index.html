@@ -360,8 +360,9 @@ async function loadTree() {
   if (!destNode) { destNode = 'ebooks'; }
   renderTree();
 }
+const CAT_LABELS = { ebooks: 'ebooks', audiobooks: 'audiobooks', manga: 'manga', bd: 'BD & comics' };
 function buildNode(catName) {
-  const root = { name: catName, path: catName, children: {}, count: null };
+  const root = { name: CAT_LABELS[catName] || catName, path: catName, children: {}, count: null };
   for (const item of TREE[catName] || []) {
     let node = root;
     let acc = catName;
@@ -397,7 +398,7 @@ function renderTree() {
   const opens = new Set([...document.querySelectorAll('#tree details[data-node]')]
     .filter(d => d.open).map(d => d.dataset.node));
   let html = '';
-  for (const cat of ['ebooks', 'audiobooks', 'manga']) {
+  for (const cat of ['ebooks', 'audiobooks', 'manga', 'bd']) {
     if (!TREE[cat]) { html += `<div class="empty">${cat} : …</div>`; continue; }
     html += nodeHtml(buildNode(cat), 0);
   }

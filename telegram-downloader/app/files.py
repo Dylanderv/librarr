@@ -2,7 +2,7 @@
 
 Séparation stricte :
 - download  -> settings.download_dir (staging)
-- move      -> staging vers un des dossiers de bibliothèque (ebooks/audiobooks/manga)
+- move      -> staging vers une bibliothèque (ebooks/audiobooks/manga/bd)
 
 Le module ne touche ni sqlite ni Telethon : responsabilité = le disque.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .config import settings
 
-CATEGORIES = ("ebooks", "audiobooks", "manga")
+CATEGORIES = ("ebooks", "audiobooks", "manga", "bd")
 
 
 class StagingError(Exception):
@@ -25,6 +25,8 @@ def categories() -> dict[str, Path]:
         "ebooks": settings.ebook_dir,
         "audiobooks": settings.audiobook_dir,
         "manga": settings.manga_dir,
+        # BD & comics (Kavita/Komga gèrent les deux formats indifféremment).
+        "bd": settings.bd_dir,
     }
     return {name: Path(value) for name, value in cfg.items()}
 

@@ -10,6 +10,7 @@ class Category(str, Enum):
     ebooks = "ebooks"
     audiobooks = "audiobooks"
     manga = "manga"
+    bd = "bd"
 
 
 class JobStatus(str, Enum):
